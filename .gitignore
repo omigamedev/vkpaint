@@ -1,0 +1,8 @@
+/Debug
+/x64
+/.vs
+/.vscode
+/build
+/*.spv
+/VulkanTest.vcxproj.user
+/glm
