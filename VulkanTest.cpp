@@ -162,10 +162,11 @@ std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory> create_
 
 auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
 {
-    constexpr std::array<vertex_t, 3> triangle = {
-        vertex_t{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-        vertex_t{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        vertex_t{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    constexpr std::array<vertex_t, 4> triangle = {
+        vertex_t{{-1.f, 1.f}, {1.0f, 1.0f, 1.0f}},
+        vertex_t{{-1.f,-1.f}, {0.0f, 1.0f, 0.0f}},
+        vertex_t{{ 1.f,-1.f}, {0.0f, 0.0f, 1.0f}},
+        vertex_t{{ 1.f, 1.f}, {1.0f, 0.0f, 0.0f}},
     };
     auto vbo_info = vk::BufferCreateInfo({}, sizeof(triangle), vk::BufferUsageFlagBits::eVertexBuffer,
         vk::SharingMode::eExclusive, 0, nullptr);
@@ -180,7 +181,24 @@ auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
         std::copy(triangle.begin(), triangle.end(), vbo_map);
         dev->unmapMemory(*vbo_mem);
     }
-    return std::tuple(std::move(vbo_buffer), std::move(vbo_mem));
+
+    constexpr std::array<uint32_t, 6> indices = { 0, 1, 2, 0, 2, 3 };
+    auto ibo_info = vk::BufferCreateInfo({}, sizeof(indices), vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::SharingMode::eExclusive, 0, nullptr);
+    auto ibo_buffer = dev->createBufferUnique(ibo_info);
+    auto ibo_mem_req = dev->getBufferMemoryRequirements(*ibo_buffer);
+    auto ibo_mem_idx = find_memory(pd, ibo_mem_req,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    auto ibo_mem = dev->allocateMemoryUnique(vk::MemoryAllocateInfo(ibo_mem_req.size, ibo_mem_idx));
+    dev->bindBufferMemory(*ibo_buffer, *ibo_mem, 0);
+    if (auto ibo_map = static_cast<uint32_t*>(dev->mapMemory(*ibo_mem, 0, sizeof(indices))))
+    {
+        std::copy(indices.begin(), indices.end(), ibo_map);
+        dev->unmapMemory(*ibo_mem);
+    }
+
+    return std::tuple(std::move(vbo_buffer), std::move(vbo_mem),
+        std::move(ibo_buffer), std::move(ibo_mem));
 }
 
 auto create_uniforms(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
@@ -291,7 +309,7 @@ int main()
                     auto descr_pool_info = vk::DescriptorPoolCreateInfo({}, 2, 1, &descr_pool_size);
                     auto descr_pool = dev->createDescriptorPoolUnique(descr_pool_info);
 
-                    auto [triangle_buffer, triangle_mem] = create_triangle(pd, dev);
+                    auto [triangle_buffer, triangle_mem, triangle_ibo, triangle_ibo_mem] = create_triangle(pd, dev);
                     auto [uniform_buffer, uniform_mem] = create_uniforms(pd, dev);
 
                     auto sc_images = dev->getSwapchainImagesKHR(*swapchain);
@@ -329,9 +347,10 @@ int main()
                         cmd[image_index]->beginRenderPass(begin_info, vk::SubpassContents::eInline);
                         cmd[image_index]->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
                         cmd[image_index]->bindVertexBuffers(0, *triangle_buffer, { 0 });
+                        cmd[image_index]->bindIndexBuffer(*triangle_ibo, 0, vk::IndexType::eUint32);
                         cmd[image_index]->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                             *layout, 0, *descr[image_index], nullptr);
-                        cmd[image_index]->draw(3, 1, 0, 0);
+                        cmd[image_index]->drawIndexed(6, 1, 0, 0, 0);
                         cmd[image_index]->endRenderPass();
                         cmd[image_index]->end();
                     }
@@ -342,10 +361,13 @@ int main()
 
                     MSG msg;
                     vk::UniqueSemaphore render_finished_sem = dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
-                    while (GetMessage(&msg, wnd, 0, 0) > 0)
+                    while (true)
                     {
-                        TranslateMessage(&msg);
-                        DispatchMessage(&msg);
+                        if (PeekMessage(&msg, wnd, 0, 0, PM_REMOVE))
+                        {
+                            TranslateMessage(&msg);
+                            DispatchMessage(&msg);
+                        }
 
                         update_uniforms(dev, uniform_mem);
 
