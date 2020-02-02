@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <windows.h>
+#include <fmt/format.h>
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.hpp>
@@ -19,6 +20,7 @@
 #include "debug_message.h"
 
 using cs = vk::ComponentSwizzle;
+using cc = vk::ColorComponentFlagBits;
 
 struct vertex_t
 {
@@ -101,9 +103,15 @@ auto init_pipeline(const vk::UniqueDevice& dev, const vk::UniqueShaderModule& ve
     auto pipeline_raster = vk::PipelineRasterizationStateCreateInfo({}, false, false, vk::PolygonMode::eFill,
         vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise, false, 0, 0, 0, 1.f);
     auto pipeline_ms = vk::PipelineMultisampleStateCreateInfo({}, vk::SampleCountFlagBits::e1, false, 1.f, nullptr, false, false);
-    auto pipeline_blend_state = vk::PipelineColorBlendAttachmentState();
-    pipeline_blend_state.setColorWriteMask(vk::ColorComponentFlagBits::eR |
-        vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+    vk::PipelineColorBlendAttachmentState pipeline_blend_state;
+    pipeline_blend_state.blendEnable = true;
+    pipeline_blend_state.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    pipeline_blend_state.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    pipeline_blend_state.colorBlendOp = vk::BlendOp::eAdd;
+    pipeline_blend_state.srcAlphaBlendFactor = vk::BlendFactor::eSrcAlpha;
+    pipeline_blend_state.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    pipeline_blend_state.alphaBlendOp = vk::BlendOp::eAdd;
+    pipeline_blend_state.colorWriteMask = cc::eR | cc::eG | cc::eB | cc::eA;
     auto pipeline_blend = vk::PipelineColorBlendStateCreateInfo({}, false, vk::LogicOp::eCopy, 1, &pipeline_blend_state);
     auto pipeline_dyn = vk::PipelineDynamicStateCreateInfo();
 
@@ -177,7 +185,7 @@ auto create_texture(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev,
     glm::ivec2 pix_size;
     int pix_comp;
     auto pix_data = std::unique_ptr<uint8_t>(
-        stbi_load("image.jpg", &pix_size.x, &pix_size.y, &pix_comp, 4));
+        stbi_load("vulkan-logo.png", &pix_size.x, &pix_size.y, &pix_comp, 4));
     if (!pix_data || glm::any(glm::equal(pix_size, { 0, 0 })))
         throw std::runtime_error("could not create texture image.jpg");
     vk::DeviceSize pix_bytes = pix_size.x * pix_size.y * 4;
@@ -293,10 +301,10 @@ vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev)
 auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
 {
     constexpr std::array<vertex_t, 4> triangle = {
-        vertex_t{{-1.f, 1.f}, {1.0f, 1.0f, 1.0f}, {0, 0}},
-        vertex_t{{-1.f,-1.f}, {0.0f, 1.0f, 0.0f}, {0, 1}},
-        vertex_t{{ 1.f,-1.f}, {0.0f, 0.0f, 1.0f}, {1, 1}},
-        vertex_t{{ 1.f, 1.f}, {1.0f, 0.0f, 0.0f}, {1, 0}},
+        vertex_t{{-1.f, 1.f}, {1.0f, 1.0f, 1.0f}, {0, 1}},
+        vertex_t{{-1.f,-1.f}, {0.0f, 1.0f, 0.0f}, {0, 0}},
+        vertex_t{{ 1.f,-1.f}, {0.0f, 0.0f, 1.0f}, {1, 0}},
+        vertex_t{{ 1.f, 1.f}, {1.0f, 0.0f, 0.0f}, {1, 1}},
     };
     auto vbo_info = vk::BufferCreateInfo({}, sizeof(triangle), vk::BufferUsageFlagBits::eVertexBuffer,
         vk::SharingMode::eExclusive, 0, nullptr);
@@ -349,7 +357,7 @@ void update_uniforms(const vk::UniqueDevice& dev, const vk::UniqueDeviceMemory& 
     theta += glm::radians(1.f);
     glm::mat4 model = glm::eulerAngleZ(theta);
     glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.f/600.f, 0.1f, 100.0f);
     // vulkan clip space has inverted y and half z !
     glm::mat4 clip = glm::mat4(
         1.0f, 0.0f, 0.0f, 0.0f,
@@ -403,6 +411,9 @@ int main()
         }
         auto props = pd.getProperties();
         std::cout << "device " << props.deviceName << "\n";
+
+        std::string title = fmt::format("Vulkan {}", props.deviceName);
+        SetWindowTextA(wnd, title.c_str());
 
         auto qf_props = pd.getQueueFamilyProperties();
         for (int idx = 0; idx < qf_props.size(); idx++)
