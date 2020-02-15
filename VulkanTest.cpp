@@ -116,7 +116,13 @@ auto init_pipeline(const vk::UniqueDevice& dev, const vk::UniqueShaderModule& ve
     pipeline_blend_state.alphaBlendOp = vk::BlendOp::eAdd;
     pipeline_blend_state.colorWriteMask = cc::eR | cc::eG | cc::eB | cc::eA;
     auto pipeline_blend = vk::PipelineColorBlendStateCreateInfo({}, false, vk::LogicOp::eCopy, 1, &pipeline_blend_state);
-    auto pipeline_dyn = vk::PipelineDynamicStateCreateInfo();
+    std::array<vk::DynamicState, 2> pipeline_dyn_states{
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
+    };
+    auto pipeline_dyn = vk::PipelineDynamicStateCreateInfo({}, 
+        pipeline_dyn_states.size(), pipeline_dyn_states.data());
+
 
     std::array<vk::DescriptorSetLayoutBinding, 3> pipeline_layout_bind = {
         vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer,
@@ -542,7 +548,12 @@ int main()
                             auto begin_info = vk::RenderPassBeginInfo(*renderpass, *framebuffers[image_index],
                                 vk::Rect2D({ 0, 0 }, extent), 1, &clearColor);
 
+                            auto pipeline_vp = vk::Viewport(0, 0, extent.width, extent.height, 0, 1);
+                            auto pipeline_vpscissor = vk::Rect2D({ 0, 0 }, extent);
+
                             cmd[image_index]->begin(vk::CommandBufferBeginInfo());
+                            cmd[image_index]->setViewport(0, pipeline_vp);
+                            cmd[image_index]->setScissor(0, pipeline_vpscissor);
                             cmd[image_index]->beginRenderPass(begin_info, vk::SubpassContents::eInline);
                             cmd[image_index]->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
                             cmd[image_index]->bindVertexBuffers(0, *triangle_buffer, { 0 });
@@ -578,15 +589,15 @@ int main()
                         vert_ubo.m_value.mvp = mvpc;
                         vert_ubo.update(dev);
 
-                        frag_ubo.m_value.col = glm::vec3(1, 1, 0);
+                        static float red = 0;
+                        red += 0.1f;
+                        frag_ubo.m_value.col = glm::vec3(glm::sin(red) * 0.5f + 0.5f, 1, 0);
                         frag_ubo.update(dev);
 
                         if (swapchain_needs_recreation)
                         {
                             swapchain.reset();
                             std::tie(swapchain, extent) = create_swapchain(pd, dev, surf);
-                            std::tie(pipeline, renderpass, layout, layout_descr) = init_pipeline(dev,
-                                vert_module, frag_module, extent);
                             create_commands();
                             swapchain_needs_recreation = false;
                         }
