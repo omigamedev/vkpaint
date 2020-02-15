@@ -6,3 +6,6 @@
 /*.spv
 /VulkanTest.vcxproj.user
 /glm
+/assimp
+/stb
+/fmt

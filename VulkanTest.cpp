@@ -1,22 +1,4 @@
-#include <iostream>
-#include <array>
-#include <vector>
-#include <fstream>
-#include <filesystem>
-#include <windows.h>
-#include <fmt/format.h>
-
-#define VK_USE_PLATFORM_WIN32_KHR
-#include <vulkan/vulkan.hpp>
-
-#define GLM_FORCE_RADIANS
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "glm/gtx/euler_angles.hpp"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb/stb_image.h"
-
+#include "pch.h"
 #include "debug_message.h"
 
 using cs = vk::ComponentSwizzle;
@@ -24,13 +6,16 @@ using cc = vk::ColorComponentFlagBits;
 
 struct vertex_t
 {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 col;
     glm::vec2 tex;
     vertex_t() = default;
-    constexpr vertex_t(glm::vec2 p, glm::vec3 c, glm::vec2 t) : pos(p), col(c), tex(t) {}
+    constexpr vertex_t(glm::vec3 p, glm::vec3 c, glm::vec2 t) : pos(p), col(c), tex(t) {}
 };
 
+bool swapchain_needs_recreation = false;
+glm::ivec2 cur_pos;
+glm::ivec2 wnd_size;
 HWND create_window(int width, int height)
 {
     WNDCLASSA wc{ 0 };
@@ -41,13 +26,31 @@ HWND create_window(int width, int height)
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
     wc.lpfnWndProc = [](HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        if (uMsg == WM_CLOSE)
+        RECT r;
+        switch (uMsg)
+        {
+        case WM_CLOSE:
             exit(0);
+        case WM_SIZE:
+            swapchain_needs_recreation = true;
+            GetClientRect(hWnd, &r);
+            wnd_size.x = r.right - r.left;
+            wnd_size.y = r.bottom - r.top;
+            break;
+        case WM_MOUSEMOVE:
+            cur_pos.x = GET_X_LPARAM(lParam);
+            cur_pos.y = GET_Y_LPARAM(lParam);
+            break;
+        default:
+            break;
+        }
         return DefWindowProcA(hWnd, uMsg, wParam, lParam); 
     };
     if (!RegisterClassA(&wc))
         exit(1);
     RECT r = { 0, 0, width, height };
+    wnd_size.x = r.right - r.left;
+    wnd_size.y = r.bottom - r.top;
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, false);
     return CreateWindowA(wc.lpszClassName, "Vulkan", WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU, 0, 0,
         r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
@@ -90,7 +93,7 @@ auto init_pipeline(const vk::UniqueDevice& dev, const vk::UniqueShaderModule& ve
     };
     auto input_binding = vk::VertexInputBindingDescription(0, sizeof(vertex_t), vk::VertexInputRate::eVertex);
     std::array<vk::VertexInputAttributeDescription, 3> input_attr = {
-        vk::VertexInputAttributeDescription{ 0, 0, vk::Format::eR32G32Sfloat, offsetof(vertex_t, pos) },
+        vk::VertexInputAttributeDescription{ 0, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex_t, pos) },
         vk::VertexInputAttributeDescription{ 1, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex_t, col) },
         vk::VertexInputAttributeDescription{ 2, 0, vk::Format::eR32G32Sfloat, offsetof(vertex_t, tex) },
     };
@@ -115,10 +118,12 @@ auto init_pipeline(const vk::UniqueDevice& dev, const vk::UniqueShaderModule& ve
     auto pipeline_blend = vk::PipelineColorBlendStateCreateInfo({}, false, vk::LogicOp::eCopy, 1, &pipeline_blend_state);
     auto pipeline_dyn = vk::PipelineDynamicStateCreateInfo();
 
-    std::array<vk::DescriptorSetLayoutBinding, 2> pipeline_layout_bind = {
+    std::array<vk::DescriptorSetLayoutBinding, 3> pipeline_layout_bind = {
         vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer,
             1, vk::ShaderStageFlagBits::eVertex, nullptr),
         vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler,
+            1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eUniformBuffer,
             1, vk::ShaderStageFlagBits::eFragment, nullptr),
     };
     auto pipeline_layout_descr_info = vk::DescriptorSetLayoutCreateInfo({}, 
@@ -185,7 +190,7 @@ auto create_texture(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev,
     glm::ivec2 pix_size;
     int pix_comp;
     auto pix_data = std::unique_ptr<uint8_t>(
-        stbi_load("vulkan-logo.png", &pix_size.x, &pix_size.y, &pix_comp, 4));
+        stbi_load("brush.png", &pix_size.x, &pix_size.y, &pix_comp, 4));
     if (!pix_data || glm::any(glm::equal(pix_size, { 0, 0 })))
         throw std::runtime_error("could not create texture image.jpg");
     vk::DeviceSize pix_bytes = pix_size.x * pix_size.y * 4;
@@ -301,10 +306,10 @@ vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev)
 auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
 {
     constexpr std::array<vertex_t, 4> triangle = {
-        vertex_t{{-1.f, 1.f}, {1.0f, 1.0f, 1.0f}, {0, 1}},
-        vertex_t{{-1.f,-1.f}, {0.0f, 1.0f, 0.0f}, {0, 0}},
-        vertex_t{{ 1.f,-1.f}, {0.0f, 0.0f, 1.0f}, {1, 0}},
-        vertex_t{{ 1.f, 1.f}, {1.0f, 0.0f, 0.0f}, {1, 1}},
+        vertex_t{{-1.f, 1.f, 0.f}, {1.0f, 1.0f, 1.0f}, {0, 1}},
+        vertex_t{{-1.f,-1.f, 0.f}, {0.0f, 1.0f, 0.0f}, {0, 0}},
+        vertex_t{{ 1.f,-1.f, 0.f}, {0.0f, 0.0f, 1.0f}, {1, 0}},
+        vertex_t{{ 1.f, 1.f, 0.f}, {1.0f, 0.0f, 0.0f}, {1, 1}},
     };
     auto vbo_info = vk::BufferCreateInfo({}, sizeof(triangle), vk::BufferUsageFlagBits::eVertexBuffer,
         vk::SharingMode::eExclusive, 0, nullptr);
@@ -336,40 +341,54 @@ auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
     }
 
     return std::tuple(std::move(vbo_buffer), std::move(vbo_mem),
-        std::move(ibo_buffer), std::move(ibo_mem));
+        std::move(ibo_buffer), std::move(ibo_mem), indices.size());
 }
 
-auto create_uniforms(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
+template<typename T>
+class UBO
 {
-    auto uniform_buffer_info = vk::BufferCreateInfo({}, sizeof(glm::mat4), vk::BufferUsageFlagBits::eUniformBuffer);
-    auto uniform_buffer = dev->createBufferUnique(uniform_buffer_info);
-    auto uniform_mem_req = dev->getBufferMemoryRequirements(*uniform_buffer);
-    auto uniform_mem_idx = find_memory(pd, uniform_mem_req, 
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-    auto uniform_mem = dev->allocateMemoryUnique({ uniform_mem_req.size, (uint32_t)uniform_mem_idx });
-    dev->bindBufferMemory(*uniform_buffer, *uniform_mem, 0);
-    return std::tuple(std::move(uniform_buffer), std::move(uniform_mem));
-}
-
-void update_uniforms(const vk::UniqueDevice& dev, const vk::UniqueDeviceMemory& uniform_mem)
-{
-    static float theta = 0;
-    theta += glm::radians(1.f);
-    glm::mat4 model = glm::eulerAngleZ(theta);
-    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.f/600.f, 0.1f, 100.0f);
-    // vulkan clip space has inverted y and half z !
-    glm::mat4 clip = glm::mat4(
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, -1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.5f, 0.0f,
-        0.0f, 0.0f, 0.5f, 1.0f);
-    glm::mat4 mvpc = clip * projection * view * model;
-    if (auto uniform_map = static_cast<glm::mat4*>(dev->mapMemory(*uniform_mem, 0, VK_WHOLE_SIZE)))
+public:
+    vk::UniqueBuffer m_buffer;
+    vk::UniqueDeviceMemory m_memory;
+    T m_value;
+    bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
     {
-        std::copy_n(&mvpc, 1, uniform_map);
-        dev->unmapMemory(*uniform_mem);
+        auto info = vk::BufferCreateInfo({}, sizeof(T), vk::BufferUsageFlagBits::eUniformBuffer);
+        m_buffer = dev->createBufferUnique(info);
+        auto mem_req = dev->getBufferMemoryRequirements(*m_buffer);
+        auto mem_idx = find_memory(pd, mem_req,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        m_memory = dev->allocateMemoryUnique({ mem_req.size, (uint32_t)mem_idx });
+        dev->bindBufferMemory(*m_buffer, *m_memory, 0);
+        return true;
     }
+    void update(const vk::UniqueDevice& dev)
+    {
+        if (auto uniform_map = static_cast<T*>(dev->mapMemory(*m_memory, 0, VK_WHOLE_SIZE)))
+        {
+            std::copy_n(&m_value, 1, uniform_map);
+            dev->unmapMemory(*m_memory);
+        }
+    }
+    static UBO<T> create_static(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
+    {
+        UBO<T> ubo;
+        if (!ubo.create(pd, dev))
+            throw std::runtime_error("UBO creation failed");
+        return ubo;
+    }
+};
+
+auto create_swapchain(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, const vk::UniqueSurfaceKHR& surf)
+{
+    auto surface_formats = pd.getSurfaceFormatsKHR(*surf);
+    auto surface_caps = pd.getSurfaceCapabilitiesKHR(*surf);
+    auto swap_info = vk::SwapchainCreateInfoKHR({}, *surf, surface_caps.minImageCount,
+        vk::Format::eB8G8R8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1,
+        vk::ImageUsageFlagBits::eColorAttachment, vk::SharingMode::eExclusive, 0, nullptr,
+        vk::SurfaceTransformFlagBitsKHR::eIdentity, vk::CompositeAlphaFlagBitsKHR::eOpaque,
+        vk::PresentModeKHR::eFifo, true, nullptr);
+    return std::tuple(dev->createSwapchainKHRUnique(swap_info), surface_caps.currentExtent);
 }
 
 int main()
@@ -377,15 +396,19 @@ int main()
     // create vulkan instance
     vk::ApplicationInfo app_info("VulkanTest", VK_MAKE_VERSION(0, 0, 1), "VulkanEngine", 1, VK_API_VERSION_1_1);
     std::vector<const char*> inst_layers{
+#ifdef _DEBUG
         "VK_LAYER_LUNARG_standard_validation",
         "VK_LAYER_KHRONOS_validation",
         //"VK_LAYER_LUNARG_api_dump",
         "VK_LAYER_RENDERDOC_Capture",
+#endif
     };
     std::vector<const char*> inst_ext{
         VK_KHR_SURFACE_EXTENSION_NAME,
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+#ifdef _DEBUG
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
     };
     vk::InstanceCreateInfo create_info({}, &app_info,
         inst_layers.size(), inst_layers.data(), inst_ext.size(), inst_ext.data());
@@ -396,11 +419,13 @@ int main()
         std::cout << "instance layer " << dl.layerName << ": " << dl.description << "\n";
     }
 
+#ifdef _DEBUG
     init_debug_message(inst);
+#endif
 
     auto wnd = create_window(800, 600);
     auto surf_info = vk::Win32SurfaceCreateInfoKHR({}, GetModuleHandle(0), wnd);
-    auto surf = inst->createWin32SurfaceKHRUnique(surf_info);
+    vk::UniqueSurfaceKHR surf = inst->createWin32SurfaceKHRUnique(surf_info);
 
     auto devices = inst->enumeratePhysicalDevices();
     for (auto& pd : devices)
@@ -432,19 +457,14 @@ int main()
                 if (dev)
                 {
                     auto q = dev->getQueue(idx, 0);
-                    auto surface_formats = pd.getSurfaceFormatsKHR(*surf);
-                    auto surface_caps = pd.getSurfaceCapabilitiesKHR(*surf);
-                    auto swap_info = vk::SwapchainCreateInfoKHR({}, *surf, surface_caps.minImageCount,
-                        vk::Format::eB8G8R8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1, 
-                        vk::ImageUsageFlagBits::eColorAttachment, vk::SharingMode::eExclusive, 0, nullptr, 
-                        vk::SurfaceTransformFlagBitsKHR::eIdentity, vk::CompositeAlphaFlagBitsKHR::eOpaque, 
-                        vk::PresentModeKHR::eFifo, true, nullptr);
-                    auto swapchain = dev->createSwapchainKHRUnique(swap_info);
+
+                    auto [swapchain, extent] = create_swapchain(pd, dev, surf);
+                    swapchain_needs_recreation = false;
 
                     auto vert_module = load_shader(*dev, "shader.vert.spv");
                     auto frag_module = load_shader(*dev, "shader.frag.spv");
                     auto [pipeline, renderpass, layout, layout_descr] = init_pipeline(dev, 
-                        vert_module, frag_module, surface_caps.currentExtent);
+                        vert_module, frag_module, extent);
 
                     auto cmd_pool_info = vk::CommandPoolCreateInfo({}, idx);
                     auto cmd_pool = dev->createCommandPoolUnique(cmd_pool_info);
@@ -452,63 +472,89 @@ int main()
                         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1),
                         vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1),
                     };
-                    auto descr_pool_info = vk::DescriptorPoolCreateInfo({}, 2, descr_pool_size.size(), descr_pool_size.data());
+                    auto descr_pool_info = vk::DescriptorPoolCreateInfo(
+                        vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
+                        2, descr_pool_size.size(), descr_pool_size.data());
                     auto descr_pool = dev->createDescriptorPoolUnique(descr_pool_info);
 
                     auto [tex_img, tex_mem, tex_view] = create_texture(pd, dev, q, cmd_pool);
-                    auto sampler = create_sampler(dev);
+                    vk::UniqueSampler sampler = create_sampler(dev);
 
-                    auto [triangle_buffer, triangle_mem, triangle_ibo, triangle_ibo_mem] = create_triangle(pd, dev);
-                    auto [uniform_buffer, uniform_mem] = create_uniforms(pd, dev);
+                    auto [triangle_buffer, triangle_mem, triangle_ibo, 
+                        triangle_ibo_mem, triangle_count] = create_triangle(pd, dev);
 
-                    auto sc_images = dev->getSwapchainImagesKHR(*swapchain);
-                    std::vector<vk::UniqueImageView> sc_image_views(sc_images.size());
-                    std::vector<vk::UniqueFramebuffer> framebuffers(sc_images.size());
-                    std::vector<vk::UniqueCommandBuffer> cmd(sc_images.size());
-                    std::vector<vk::UniqueDescriptorSet> descr(sc_images.size());
-                    for (size_t image_index = 0; image_index < sc_images.size(); image_index++)
-                    {
-                        auto view_info = vk::ImageViewCreateInfo({}, sc_images[image_index],
-                            vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm,
-                            vk::ComponentMapping(cs::eR, cs::eG, cs::eB, cs::eA),
-                            vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-                        sc_image_views[image_index] = dev->createImageViewUnique(view_info);
+                    struct vert_ubo_t {
+                        glm::mat4 mvp;
+                    };
+                    struct frag_ubo_t {
+                        glm::vec3 col;
+                    };
 
-                        auto fb_info = vk::FramebufferCreateInfo({}, *renderpass, 1, &sc_image_views[image_index].get(),
-                            surface_caps.currentExtent.width, surface_caps.currentExtent.height, 1);
-                        framebuffers[image_index] = dev->createFramebufferUnique(fb_info);
+                    auto vert_ubo = UBO<vert_ubo_t>::create_static(pd, dev);
+                    auto frag_ubo = UBO<frag_ubo_t>::create_static(pd, dev);
 
-                        auto cmd_info = vk::CommandBufferAllocateInfo(*cmd_pool, vk::CommandBufferLevel::ePrimary, 1);
-                        cmd[image_index] = std::move(dev->allocateCommandBuffersUnique(cmd_info).front());
+                    std::vector<vk::Image> sc_images;
+                    std::vector<vk::UniqueImageView> sc_image_views;
+                    std::vector<vk::UniqueFramebuffer> framebuffers;
+                    std::vector<vk::UniqueCommandBuffer> cmd;
+                    std::vector<vk::UniqueDescriptorSet> descr;
+                    auto create_commands = [&] {
+                        sc_images = dev->getSwapchainImagesKHR(*swapchain);
+                        sc_image_views.resize(sc_images.size());
+                        framebuffers.resize(sc_images.size());
+                        cmd.resize(sc_images.size());
+                        descr.clear();
+                        descr.resize(sc_images.size());
+                        dev->resetDescriptorPool(*descr_pool);
+                        dev->resetCommandPool(*cmd_pool, vk::CommandPoolResetFlags());
+                        for (size_t image_index = 0; image_index < sc_images.size(); image_index++)
+                        {
+                            auto view_info = vk::ImageViewCreateInfo({}, sc_images[image_index],
+                                vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm,
+                                vk::ComponentMapping(cs::eR, cs::eG, cs::eB, cs::eA),
+                                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+                            sc_image_views[image_index] = dev->createImageViewUnique(view_info);
 
-                        auto descr_info = vk::DescriptorSetAllocateInfo(*descr_pool, 1, &layout_descr.get());
-                        descr[image_index] = std::move(dev->allocateDescriptorSetsUnique(descr_info).front());
-                        auto descr_buffer_info = vk::DescriptorBufferInfo(*uniform_buffer, 0, VK_WHOLE_SIZE);
-                        auto descr_image_info = vk::DescriptorImageInfo(*sampler, 
-                            *tex_view, vk::ImageLayout::eShaderReadOnlyOptimal);
-                        std::array<vk::WriteDescriptorSet, 2> descr_write = {
-                            vk::WriteDescriptorSet(*descr[image_index], 0, 0, 1,
-                                vk::DescriptorType::eUniformBuffer, nullptr, &descr_buffer_info, nullptr),
-                            vk::WriteDescriptorSet(*descr[image_index], 1, 0, 1,
-                                vk::DescriptorType::eCombinedImageSampler, &descr_image_info, nullptr, nullptr),
-                        };
-                        dev->updateDescriptorSets(descr_write, nullptr);
+                            auto fb_info = vk::FramebufferCreateInfo({}, *renderpass, 1, &sc_image_views[image_index].get(),
+                                extent.width, extent.height, 1);
+                            framebuffers[image_index] = dev->createFramebufferUnique(fb_info);
 
-                        vk::ClearValue clearColor(std::array<float, 4>{ 0.3f, 0.0f, 0.0f, 1.0f });
-                        auto begin_info = vk::RenderPassBeginInfo(*renderpass, *framebuffers[image_index],
-                            vk::Rect2D({ 0, 0 }, surface_caps.currentExtent), 1, &clearColor);
+                            auto cmd_info = vk::CommandBufferAllocateInfo(*cmd_pool, vk::CommandBufferLevel::ePrimary, 1);
+                            cmd[image_index] = std::move(dev->allocateCommandBuffersUnique(cmd_info).front());
 
-                        cmd[image_index]->begin(vk::CommandBufferBeginInfo());
-                        cmd[image_index]->beginRenderPass(begin_info, vk::SubpassContents::eInline);
-                        cmd[image_index]->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-                        cmd[image_index]->bindVertexBuffers(0, *triangle_buffer, { 0 });
-                        cmd[image_index]->bindIndexBuffer(*triangle_ibo, 0, vk::IndexType::eUint32);
-                        cmd[image_index]->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                            *layout, 0, *descr[image_index], nullptr);
-                        cmd[image_index]->drawIndexed(6, 1, 0, 0, 0);
-                        cmd[image_index]->endRenderPass();
-                        cmd[image_index]->end();
-                    }
+                            auto descr_info = vk::DescriptorSetAllocateInfo(*descr_pool, 1, &layout_descr.get());
+                            descr[image_index] = std::move(dev->allocateDescriptorSetsUnique(descr_info).front());
+                            auto descr_vert_buffer_info = vk::DescriptorBufferInfo(*vert_ubo.m_buffer, 0, VK_WHOLE_SIZE);
+                            auto descr_frag_buffer_info = vk::DescriptorBufferInfo(*frag_ubo.m_buffer, 0, VK_WHOLE_SIZE);
+                            auto descr_image_info = vk::DescriptorImageInfo(*sampler,
+                                *tex_view, vk::ImageLayout::eShaderReadOnlyOptimal);
+                            std::array<vk::WriteDescriptorSet, 3> descr_write = {
+                                vk::WriteDescriptorSet(*descr[image_index], 0, 0, 1,
+                                    vk::DescriptorType::eUniformBuffer, nullptr, &descr_vert_buffer_info, nullptr),
+                                vk::WriteDescriptorSet(*descr[image_index], 1, 0, 1,
+                                    vk::DescriptorType::eCombinedImageSampler, &descr_image_info, nullptr, nullptr),
+                                vk::WriteDescriptorSet(*descr[image_index], 2, 0, 1,
+                                    vk::DescriptorType::eUniformBuffer, nullptr, &descr_frag_buffer_info, nullptr),
+                            };
+                            dev->updateDescriptorSets(descr_write, nullptr);
+
+                            vk::ClearValue clearColor(std::array<float, 4>{ 0.3f, 0.0f, 0.0f, 1.0f });
+                            auto begin_info = vk::RenderPassBeginInfo(*renderpass, *framebuffers[image_index],
+                                vk::Rect2D({ 0, 0 }, extent), 1, &clearColor);
+
+                            cmd[image_index]->begin(vk::CommandBufferBeginInfo());
+                            cmd[image_index]->beginRenderPass(begin_info, vk::SubpassContents::eInline);
+                            cmd[image_index]->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+                            cmd[image_index]->bindVertexBuffers(0, *triangle_buffer, { 0 });
+                            cmd[image_index]->bindIndexBuffer(*triangle_ibo, 0, vk::IndexType::eUint32);
+                            cmd[image_index]->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                *layout, 0, *descr[image_index], nullptr);
+                            cmd[image_index]->drawIndexed(triangle_count, 1, 0, 0, 0);
+                            cmd[image_index]->endRenderPass();
+                            cmd[image_index]->end();
+                        }
+                    };
+                    create_commands();
 
                     // Create Depth buffer
                     //auto [depth_image, depth_view, depth_mem] = create_depth(pd, *dev, 0, 0);
@@ -524,7 +570,26 @@ int main()
                             DispatchMessage(&msg);
                         }
 
-                        update_uniforms(dev, uniform_mem);
+                        glm::vec3 cur_norm = glm::vec3(glm::vec2(cur_pos) / glm::vec2(wnd_size) * 2.f - 1.f, 0);
+                        glm::mat4 model = glm::translate(cur_norm) * glm::scale(glm::vec3(.1f, .1f, 1.f));// , glm::eulerAngleZ(theta);
+                        glm::mat4 view = glm::identity<glm::mat4>();
+                        glm::mat4 projection = glm::ortho(-1.f, 1.f, -1.f, 1.f, -1.f, 1.f);
+                        glm::mat4 mvpc = projection * view * model;
+                        vert_ubo.m_value.mvp = mvpc;
+                        vert_ubo.update(dev);
+
+                        frag_ubo.m_value.col = glm::vec3(1, 1, 0);
+                        frag_ubo.update(dev);
+
+                        if (swapchain_needs_recreation)
+                        {
+                            swapchain.reset();
+                            std::tie(swapchain, extent) = create_swapchain(pd, dev, surf);
+                            std::tie(pipeline, renderpass, layout, layout_descr) = init_pipeline(dev,
+                                vert_module, frag_module, extent);
+                            create_commands();
+                            swapchain_needs_recreation = false;
+                        }
 
                         auto swapchain_sem = dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
                         auto swapchain_idx = dev->acquireNextImageKHR(*swapchain, UINT64_MAX, *swapchain_sem, nullptr);
