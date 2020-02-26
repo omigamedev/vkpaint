@@ -110,7 +110,7 @@ bool App::init_pipeline()
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo({}, 1, &m_descr_layout.get(), 0, nullptr);
     m_pipeline_layout = m_dev->createPipelineLayoutUnique(pipeline_layout_info);
 
-    auto pipeline_renderpass_fb = vk::AttachmentDescription({}, vk::Format::eB8G8R8A8Unorm,
+    auto pipeline_renderpass_fb = vk::AttachmentDescription({}, vk::Format::eR8G8B8A8Unorm,
         vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
         vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
         vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR);
@@ -176,7 +176,7 @@ void App::create_swapchain()
     auto surface_formats = m_pd.getSurfaceFormatsKHR(*m_surf);
     auto surface_caps = m_pd.getSurfaceCapabilitiesKHR(*m_surf);
     auto swap_info = vk::SwapchainCreateInfoKHR({}, *m_surf, surface_caps.minImageCount,
-        vk::Format::eB8G8R8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1,
+        vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
         vk::SharingMode::eExclusive, 0, nullptr,
         vk::SurfaceTransformFlagBitsKHR::eIdentity, vk::CompositeAlphaFlagBitsKHR::eOpaque,
@@ -188,20 +188,13 @@ void App::create_swapchain()
     m_swapchain_views.resize(m_swapchain_images.size());
     m_framebuffers.resize(m_swapchain_images.size());
 
-    m_descr.clear();
-    m_descr.resize(m_swapchain_images.size());
-    m_dev->resetDescriptorPool(*m_descr_pool);
-    m_dev->resetCommandPool(*m_cmd_pool, vk::CommandPoolResetFlags());
-
-    std::array<vk::DescriptorSetLayout, 2> layout_descriptors = { *m_descr_layout, *m_descr_layout };
-    auto descr_info = vk::DescriptorSetAllocateInfo(*m_descr_pool,
-        layout_descriptors.size(), layout_descriptors.data());
-    m_descr = std::move(m_dev->allocateDescriptorSetsUnique(descr_info));
+//     m_dev->resetDescriptorPool(*m_descr_pool);
+//     m_dev->resetCommandPool(*m_cmd_pool, vk::CommandPoolResetFlags());
 
     for (size_t image_index = 0; image_index < m_swapchain_images.size(); image_index++)
     {
         auto view_info = vk::ImageViewCreateInfo({}, m_swapchain_images[image_index],
-            vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm,
+            vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Unorm,
             vk::ComponentMapping(cs::eR, cs::eG, cs::eB, cs::eA),
             vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
         m_swapchain_views[image_index] = m_dev->createImageViewUnique(view_info);

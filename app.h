@@ -25,7 +25,6 @@ public:
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_views;
     std::vector<vk::UniqueFramebuffer> m_framebuffers;
-    std::vector<vk::UniqueDescriptorSet> m_descr;
 
     HWND m_wnd;
     std::string m_device_name;

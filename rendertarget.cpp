@@ -21,8 +21,8 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
 
     create_framebuffer(pd, dev);
 
-    vk::UniqueShaderModule shader_vert = load_shader(dev, "shader.vert.spv");
-    vk::UniqueShaderModule shader_frag = load_shader(dev, "shader.frag.spv");
+    vk::UniqueShaderModule shader_vert = load_shader(dev, "shader-fill.vert.spv");
+    vk::UniqueShaderModule shader_frag = load_shader(dev, "shader-fill.frag.spv");
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages = {
         vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex, *shader_vert, "main"),
         vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment, *shader_frag, "main"),
@@ -33,10 +33,10 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
             1, vk::ShaderStageFlagBits::eVertex, nullptr),
         vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, // tex_bg
             1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, // tex_brush
-            1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, // col
-            1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        //vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, // tex_brush
+        //    1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        //vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, // col
+        //    1, vk::ShaderStageFlagBits::eFragment, nullptr),
     };
     vk::DescriptorSetLayoutCreateInfo descr_info;
     descr_info.bindingCount = pipeline_layout_bind.size();
@@ -102,6 +102,60 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
     m_pipeline = dev->createGraphicsPipelineUnique(nullptr, info);
 
     return true;
+}
+
+void RenderTarget::to_texture(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q)
+{
+    vk::UniqueCommandBuffer cmd = std::move(dev->allocateCommandBuffersUnique(
+        { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
+    cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+    {
+        vk::ImageMemoryBarrier imb;
+        imb.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        imb.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imb.image = *m_fb_img;
+        imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            vk::PipelineStageFlagBits::eFragmentShader, {}, 0, nullptr, 0, nullptr, 1, &imb);
+    }
+    cmd->end();
+
+    vk::SubmitInfo si;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd.get();
+    vk::UniqueFence submit_fence = dev->createFenceUnique(vk::FenceCreateInfo());
+    q.submit(si, *submit_fence);
+    dev->waitForFences(*submit_fence, true, UINT64_MAX);
+}
+
+void RenderTarget::to_render(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q)
+{
+    vk::UniqueCommandBuffer cmd = std::move(dev->allocateCommandBuffersUnique(
+        { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
+    cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+    {
+        vk::ImageMemoryBarrier imb;
+        imb.srcAccessMask = vk::AccessFlags();
+        imb.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        imb.oldLayout = vk::ImageLayout::eUndefined;
+        imb.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+        imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imb.image = *m_fb_img;
+        imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, 0, nullptr, 0, nullptr, 1, &imb);
+    }
+    cmd->end();
+
+    vk::SubmitInfo si;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd.get();
+    vk::UniqueFence submit_fence = dev->createFenceUnique(vk::FenceCreateInfo());
+    q.submit(si, *submit_fence);
+    dev->waitForFences(*submit_fence, true, UINT64_MAX);
 }
 
 bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)

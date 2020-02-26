@@ -5,7 +5,6 @@ class RenderTarget
     bool create_framebuffer(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev);
 
 public:
-    vk::UniqueFramebuffer m_fb;
     vk::UniqueDescriptorSetLayout m_descr_layout;
     vk::UniquePipelineLayout m_layout;
     vk::UniquePipeline m_pipeline;
@@ -22,4 +21,6 @@ public:
     glm::ivec2 m_size;
 
     bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height);
+    void to_texture(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q);
+    void to_render(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q);
 };
