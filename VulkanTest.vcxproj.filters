@@ -33,12 +33,27 @@
     <ClCompile Include="tiny_obj_loader.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rendertarget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.vert">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shader.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shader-fill.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shader-fill.frag">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
@@ -50,6 +65,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="tiny_obj_loader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rendertarget.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
