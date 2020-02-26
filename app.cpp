@@ -44,7 +44,8 @@ bool App::init_vulkan()
 
     // set window title to device name
     auto props = m_pd.getProperties();
-    std::string title = fmt::format("Vulkan {}", props.deviceName);
+    m_device_name = props.deviceName;
+    std::string title = fmt::format("Vulkan {}", m_device_name);
     SetWindowTextA(m_wnd, title.c_str());
 
     m_main_queue = m_dev->getQueue(m_family_idx, 0);
@@ -63,7 +64,7 @@ bool App::init_vulkan()
     init_pipeline();
     on_init();
 
-    resize(0, 0);
+    resize();
 
     return true;
 }
@@ -164,10 +165,10 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
     return {};
 }
 
-void App::resize(int width, int height)
+void App::resize()
 {
     create_swapchain();
-    on_resize(width, height);
+    on_resize();
 }
 
 void App::create_swapchain()
@@ -218,6 +219,9 @@ void App::create_commands()
 void App::run_loop()
 {
     MSG msg;
+    auto timer_start = std::chrono::high_resolution_clock::now();
+    uint32_t frames = 0;
+    float timer_fps = 0;
     while (true)
     {
         if (PeekMessage(&msg, m_wnd, 0, 0, PM_REMOVE))
@@ -226,31 +230,29 @@ void App::run_loop()
             DispatchMessage(&msg);
         }
 
-        //glm::vec3 cur_norm = glm::vec3(glm::vec2(cur_pos) / glm::vec2(wnd_size) * 2.f - 1.f, 0);
-        //glm::mat4 model = glm::translate(cur_norm) * glm::scale(glm::vec3(.1f, .1f, 1.f));// , glm::eulerAngleZ(theta);
-        //glm::mat4 view = glm::identity<glm::mat4>();
-        //glm::mat4 projection = glm::ortho(-1.f, 1.f, -1.f, 1.f, -1.f, 1.f);
-        //glm::mat4 mvpc = projection * view * model;
-        //vert_ubo.m_value.mvp = mvpc;
-        //vert_ubo.update(dev);
-
-        //static float red = 0;
-        //red += 0.1f;
-        //frag_ubo.m_value.col = glm::vec3(1, 1, 0);
-        //frag_ubo.update(dev);
-
         if (swapchain_needs_recreation)
         {
-            resize(0, 0);
-            //swapchain.reset();
-            //std::tie(swapchain, extent) = create_swapchain(pd, dev, surf);
-            //create_commands();
+            resize();
             swapchain_needs_recreation = false;
         }
 
-        float dt = 0; // TODO: compute frame time
+        auto timer_stop = std::chrono::high_resolution_clock::now();
+        auto timer_diff = std::chrono::duration<float>(timer_stop - timer_start);
+        timer_start = timer_stop;
+        float dt = timer_diff.count();
         on_render_frame(dt);
-        // TODO: synchronize stuff here
+        
+        frames++;
+        timer_fps += dt;
+        float timer_fps_sec;
+        float timer_fps_dec = std::modf(timer_fps, &timer_fps_sec);
+        if (timer_fps_sec >= 1.f)
+        {
+            timer_fps = timer_fps_dec;
+            std::string title = fmt::format("Vulkan {} - {} fps", m_device_name, frames);
+            SetWindowTextA(m_wnd, title.c_str());
+            frames = 0;
+        }
     }
     m_dev->waitIdle();
 }

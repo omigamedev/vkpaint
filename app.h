@@ -28,17 +28,18 @@ public:
     std::vector<vk::UniqueDescriptorSet> m_descr;
 
     HWND m_wnd;
+    std::string m_device_name;
 
     bool init_vulkan();
     bool init_pipeline();
     std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> find_device();
-    void resize(int width, int height);
+    void resize();
     void create_swapchain();
     void create_commands();
     void run_loop();
 
     virtual void on_init() = 0;
-    virtual void on_resize(int width, int height) = 0;
+    virtual void on_resize() = 0;
     virtual void on_render_frame(float dt) = 0;
 };
 

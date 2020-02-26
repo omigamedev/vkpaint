@@ -4,6 +4,7 @@
 #include <sstream>
 #include <array>
 #include <vector>
+#include <chrono>
 #include <fstream>
 #include <filesystem>
 #include <windows.h>

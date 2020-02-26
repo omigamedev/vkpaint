@@ -23,7 +23,6 @@ public:
 
     virtual void on_render_frame(float dt) override
     {
-
         auto swapchain_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         vk::ResultValue<uint32_t> swapchain_idx = m_dev->acquireNextImageKHR(*m_swapchain, UINT64_MAX, *swapchain_sem, nullptr);
         vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
@@ -37,7 +36,7 @@ public:
         m_dev->waitForFences(*fence, true, UINT64_MAX);
     }
 
-    virtual void on_resize(int width, int height) override
+    virtual void on_resize() override
     {
         m_cmd_screen.resize(m_swapchain_images.size());
 
