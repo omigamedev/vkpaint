@@ -61,13 +61,9 @@ bool App::init_vulkan()
     m_descr_pool = m_dev->createDescriptorPoolUnique(descr_pool_info);
 
     init_pipeline();
-
-    std::tie(m_tex_image, m_tex_mem, m_tex_view) = create_texture(m_pd, m_dev, m_main_queue, m_cmd_pool);
-    m_sampler = create_sampler(m_dev);
+    on_init();
 
     resize(0, 0);
-
-    on_init();
 
     return true;
 }

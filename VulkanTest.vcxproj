@@ -179,6 +179,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="rendertarget.cpp" />
+    <ClCompile Include="texture.cpp" />
     <ClCompile Include="tiny_obj_loader.cc">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
@@ -203,6 +204,7 @@
     <ClInclude Include="debug_message.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="rendertarget.h" />
+    <ClInclude Include="texture.h" />
     <ClInclude Include="tiny_obj_loader.h" />
     <ClInclude Include="utils.h" />
   </ItemGroup>

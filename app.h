@@ -22,11 +22,6 @@ public:
     vk::UniqueCommandPool m_cmd_pool;
     vk::UniqueDescriptorPool m_descr_pool;
 
-    vk::UniqueSampler m_sampler;
-    vk::UniqueImage m_tex_image;
-    vk::UniqueImageView m_tex_view;
-    vk::UniqueDeviceMemory m_tex_mem;
-
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_views;
     std::vector<vk::UniqueFramebuffer> m_framebuffers;

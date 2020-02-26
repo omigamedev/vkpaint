@@ -23,13 +23,8 @@ HWND create_window(int width, int height);
 
 std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory> 
     create_depth(const vk::PhysicalDevice& pd, vk::Device const& dev, int width, int height);
-std::tuple<vk::UniqueImage, vk::UniqueDeviceMemory, vk::UniqueImageView>
-    create_texture(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev,
-    const vk::Queue& q, const vk::UniqueCommandPool& cmd_pool);
 vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev);
 auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev);
-std::tuple<vk::UniqueSwapchainKHR, vk::Extent2D>
-    create_swapchain(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, const vk::UniqueSurfaceKHR& surf);
 
 template<typename T>
 class UBO

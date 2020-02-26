@@ -2,17 +2,22 @@
 #include "utils.h"
 #include "app.h"
 #include "rendertarget.h"
+#include "texture.h"
 
 class DrawApp : public App
 {
     RenderTarget rt;
+    Texture m_tex;
     vk::UniqueSemaphore render_finished_sem;
+    vk::UniqueSampler m_sampler;
     std::vector<CmdRenderToScreen> m_cmd_screen;
 
 public:
     virtual void on_init() override
     {
         rt.create(m_pd, m_dev, 512, 512);
+        m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
+        m_sampler = create_sampler(m_dev);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
     }
 
@@ -39,7 +44,7 @@ public:
         for (size_t i = 0; i < m_swapchain_images.size(); i++)
         {
             m_cmd_screen[i].create(m_dev, m_pd, m_cmd_pool, m_descr[i], m_renderpass, m_framebuffers[i],
-                m_pipeline, m_pipeline_layout, m_sampler, m_swapchain_extent, m_tex_view);
+                m_pipeline, m_pipeline_layout, m_sampler, m_swapchain_extent, m_tex.m_view);
         }
     }
 
