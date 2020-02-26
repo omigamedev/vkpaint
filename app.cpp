@@ -62,7 +62,6 @@ bool App::init_vulkan()
 
     init_pipeline();
 
-    m_ubo.create(m_pd, m_dev);
     std::tie(m_tex_image, m_tex_mem, m_tex_view) = create_texture(m_pd, m_dev, m_main_queue, m_cmd_pool);
     m_sampler = create_sampler(m_dev);
 
@@ -172,7 +171,7 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
 void App::resize(int width, int height)
 {
     create_swapchain();
-    create_commands();
+    on_resize(width, height);
 }
 
 void App::create_swapchain()
@@ -187,23 +186,20 @@ void App::create_swapchain()
         vk::PresentModeKHR::eFifo, true, nullptr);
     m_swapchain = m_dev->createSwapchainKHRUnique(swap_info);
     m_swapchain_extent = surface_caps.currentExtent;
-}
 
-void App::create_commands()
-{
     m_swapchain_images = m_dev->getSwapchainImagesKHR(*m_swapchain);
     m_swapchain_views.resize(m_swapchain_images.size());
     m_framebuffers.resize(m_swapchain_images.size());
-    m_cmd.resize(m_swapchain_images.size());
-    descr.clear();
-    descr.resize(m_swapchain_images.size());
+
+    m_descr.clear();
+    m_descr.resize(m_swapchain_images.size());
     m_dev->resetDescriptorPool(*m_descr_pool);
     m_dev->resetCommandPool(*m_cmd_pool, vk::CommandPoolResetFlags());
 
     std::array<vk::DescriptorSetLayout, 2> layout_descriptors = { *m_descr_layout, *m_descr_layout };
     auto descr_info = vk::DescriptorSetAllocateInfo(*m_descr_pool,
         layout_descriptors.size(), layout_descriptors.data());
-    auto descr_array = m_dev->allocateDescriptorSetsUnique(descr_info);
+    m_descr = std::move(m_dev->allocateDescriptorSetsUnique(descr_info));
 
     for (size_t image_index = 0; image_index < m_swapchain_images.size(); image_index++)
     {
@@ -216,41 +212,11 @@ void App::create_commands()
         auto fb_info = vk::FramebufferCreateInfo({}, *m_renderpass, 1, &m_swapchain_views[image_index].get(),
             m_swapchain_extent.width, m_swapchain_extent.height, 1);
         m_framebuffers[image_index] = m_dev->createFramebufferUnique(fb_info);
-
-        auto cmd_info = vk::CommandBufferAllocateInfo(*m_cmd_pool, vk::CommandBufferLevel::ePrimary, 1);
-        m_cmd[image_index] = std::move(m_dev->allocateCommandBuffersUnique(cmd_info).front());
-
-        descr[image_index] = std::move(descr_array[image_index]);
-        auto descr_vert_buffer_info = vk::DescriptorBufferInfo(*m_ubo.m_buffer, 0, VK_WHOLE_SIZE);
-        auto descr_image_info_fb = vk::DescriptorImageInfo(*m_sampler,
-            *m_tex_view, vk::ImageLayout::eShaderReadOnlyOptimal);
-        std::array<vk::WriteDescriptorSet, 2> descr_write = {
-            vk::WriteDescriptorSet(*descr[image_index], 0, 0, 1,
-                vk::DescriptorType::eUniformBuffer, nullptr, &descr_vert_buffer_info, nullptr),
-            vk::WriteDescriptorSet(*descr[image_index], 1, 0, 1,
-                vk::DescriptorType::eCombinedImageSampler, &descr_image_info_fb, nullptr, nullptr),
-        };
-        m_dev->updateDescriptorSets(descr_write, nullptr);
-
-        vk::ClearValue clearColor(std::array<float, 4>{ 0.3f, 0.0f, 0.0f, 1.0f });
-        auto begin_info = vk::RenderPassBeginInfo(*m_renderpass, *m_framebuffers[image_index],
-            vk::Rect2D({ 0, 0 }, m_swapchain_extent), 1, &clearColor);
-
-        auto pipeline_vp = vk::Viewport(0, 0, m_swapchain_extent.width, m_swapchain_extent.height, 0, 1);
-        auto pipeline_vpscissor = vk::Rect2D({ 0, 0 }, m_swapchain_extent);
-
-        m_cmd[image_index]->begin(vk::CommandBufferBeginInfo());
-        m_cmd[image_index]->setViewport(0, pipeline_vp);
-        m_cmd[image_index]->setScissor(0, pipeline_vpscissor);
-
-        m_cmd[image_index]->beginRenderPass(begin_info, vk::SubpassContents::eInline);
-        m_cmd[image_index]->bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-        m_cmd[image_index]->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-            *m_pipeline_layout, 0, *descr[image_index], nullptr);
-        m_cmd[image_index]->draw(6, 1, 0, 0);
-        m_cmd[image_index]->endRenderPass();
-        m_cmd[image_index]->end();
     }
+}
+
+void App::create_commands()
+{
 }
 
 void App::run_loop()

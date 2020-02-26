@@ -1,12 +1,9 @@
 #pragma once
+#include "CmdRenderToScreen.h"
 
 class App 
 {
 public:
-    struct vert_ubo_t {
-        glm::mat4 mvp;
-    };
-
     vk::PhysicalDevice m_pd;
     vk::UniqueInstance m_instance;
     vk::UniqueSurfaceKHR m_surf;
@@ -25,7 +22,6 @@ public:
     vk::UniqueCommandPool m_cmd_pool;
     vk::UniqueDescriptorPool m_descr_pool;
 
-    UBO<vert_ubo_t> m_ubo;
     vk::UniqueSampler m_sampler;
     vk::UniqueImage m_tex_image;
     vk::UniqueImageView m_tex_view;
@@ -34,8 +30,7 @@ public:
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_views;
     std::vector<vk::UniqueFramebuffer> m_framebuffers;
-    std::vector<vk::UniqueCommandBuffer> m_cmd;
-    std::vector<vk::UniqueDescriptorSet> descr;
+    std::vector<vk::UniqueDescriptorSet> m_descr;
 
     HWND m_wnd;
 
@@ -48,6 +43,7 @@ public:
     void run_loop();
 
     virtual void on_init() = 0;
+    virtual void on_resize(int width, int height) = 0;
     virtual void on_render_frame(float dt) = 0;
 };
 

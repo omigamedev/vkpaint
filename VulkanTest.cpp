@@ -7,6 +7,7 @@ class DrawApp : public App
 {
     RenderTarget rt;
     vk::UniqueSemaphore render_finished_sem;
+    std::vector<CmdRenderToScreen> m_cmd_screen;
 
 public:
     virtual void on_init() override
@@ -22,7 +23,7 @@ public:
         vk::ResultValue<uint32_t> swapchain_idx = m_dev->acquireNextImageKHR(*m_swapchain, UINT64_MAX, *swapchain_sem, nullptr);
         vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
         auto submit_info = vk::SubmitInfo(1, &swapchain_sem.get(), &wait_stage, 1,
-            &m_cmd[swapchain_idx.value].get(), 1, &render_finished_sem.get());
+            &m_cmd_screen[swapchain_idx.value].m_cmd.get(), 1, &render_finished_sem.get());
         auto fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
         m_main_queue.submit(submit_info, *fence);
 
@@ -30,6 +31,18 @@ public:
         m_main_queue.presentKHR(present_info);
         m_dev->waitForFences(*fence, true, UINT64_MAX);
     }
+
+    virtual void on_resize(int width, int height) override
+    {
+        m_cmd_screen.resize(m_swapchain_images.size());
+
+        for (size_t i = 0; i < m_swapchain_images.size(); i++)
+        {
+            m_cmd_screen[i].create(m_dev, m_pd, m_cmd_pool, m_descr[i], m_renderpass, m_framebuffers[i],
+                m_pipeline, m_pipeline_layout, m_sampler, m_swapchain_extent, m_tex_view);
+        }
+    }
+
 };
 
 int main()
