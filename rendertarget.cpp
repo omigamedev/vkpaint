@@ -21,8 +21,8 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
 
     create_framebuffer(pd, dev);
 
-    vk::UniqueShaderModule shader_vert = load_shader(dev, "shader-fill.vert.spv");
-    vk::UniqueShaderModule shader_frag = load_shader(dev, "shader-fill.frag.spv");
+    vk::UniqueShaderModule shader_vert = load_shader(dev, "shader.vert.spv");
+    vk::UniqueShaderModule shader_frag = load_shader(dev, "shader.frag.spv");
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages = {
         vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex, *shader_vert, "main"),
         vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment, *shader_frag, "main"),
@@ -33,10 +33,10 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
             1, vk::ShaderStageFlagBits::eVertex, nullptr),
         vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, // tex_bg
             1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        //vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, // tex_brush
-        //    1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        //vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, // col
-        //    1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, // tex_brush
+            1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, // col
+            1, vk::ShaderStageFlagBits::eFragment, nullptr),
     };
     vk::DescriptorSetLayoutCreateInfo descr_info;
     descr_info.bindingCount = pipeline_layout_bind.size();
@@ -104,51 +104,27 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
     return true;
 }
 
-void RenderTarget::to_texture(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q)
+void RenderTarget::to_layout(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q,
+    vk::AccessFlags access_mask, vk::ImageLayout layout, vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage)
 {
     vk::UniqueCommandBuffer cmd = std::move(dev->allocateCommandBuffersUnique(
         { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
     cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
     {
         vk::ImageMemoryBarrier imb;
-        imb.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        imb.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        imb.srcAccessMask = m_fb_access_mask;
+        imb.dstAccessMask = access_mask;
+        imb.oldLayout = m_fb_layout;
+        imb.newLayout = layout;
         imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         imb.image = *m_fb_img;
         imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-            vk::PipelineStageFlagBits::eFragmentShader, {}, 0, nullptr, 0, nullptr, 1, &imb);
+        cmd->pipelineBarrier(src_stage, dst_stage, {}, 0, nullptr, 0, nullptr, 1, &imb);
     }
     cmd->end();
 
-    vk::SubmitInfo si;
-    si.commandBufferCount = 1;
-    si.pCommandBuffers = &cmd.get();
-    vk::UniqueFence submit_fence = dev->createFenceUnique(vk::FenceCreateInfo());
-    q.submit(si, *submit_fence);
-    dev->waitForFences(*submit_fence, true, UINT64_MAX);
-}
-
-void RenderTarget::to_render(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q)
-{
-    vk::UniqueCommandBuffer cmd = std::move(dev->allocateCommandBuffersUnique(
-        { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
-    cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-    {
-        vk::ImageMemoryBarrier imb;
-        imb.srcAccessMask = vk::AccessFlags();
-        imb.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        imb.oldLayout = vk::ImageLayout::eUndefined;
-        imb.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-        imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        imb.image = *m_fb_img;
-        imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-            vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, 0, nullptr, 0, nullptr, 1, &imb);
-    }
-    cmd->end();
+    m_fb_access_mask = access_mask;
+    m_fb_layout = layout;
 
     vk::SubmitInfo si;
     si.commandBufferCount = 1;
@@ -163,7 +139,7 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     // device image
     vk::ImageCreateInfo img_info;
     img_info.imageType = vk::ImageType::e2D;
-    img_info.format = vk::Format::eR8G8B8A8Unorm;
+    img_info.format = vk::Format::eR32G32B32A32Sfloat;
     img_info.extent = vk::Extent3D(m_size.x, m_size.y, 1);
     img_info.mipLevels = 1;
     img_info.arrayLayers = 1;
@@ -191,14 +167,14 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     vk::AttachmentDescription renderpass_descr;
     renderpass_descr.format = img_info.format;
     renderpass_descr.samples = vk::SampleCountFlagBits::e1;
-    renderpass_descr.loadOp = vk::AttachmentLoadOp::eClear;
+    renderpass_descr.loadOp = vk::AttachmentLoadOp::eLoad;
     renderpass_descr.storeOp = vk::AttachmentStoreOp::eStore;
     renderpass_descr.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     renderpass_descr.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    renderpass_descr.initialLayout = vk::ImageLayout::eUndefined; // TODO: try other things
+    renderpass_descr.initialLayout = vk::ImageLayout::eColorAttachmentOptimal; // TODO: try other things
     renderpass_descr.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-    auto subpass_color_ref = vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+    auto subpass_color_ref = vk::AttachmentReference(0, vk::ImageLayout::eGeneral);
     vk::SubpassDescription subpass_descr;
     subpass_descr.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass_descr.colorAttachmentCount = 1;
@@ -219,6 +195,9 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     fb_info.height = m_size.y;
     fb_info.layers = 1;
     m_framebuffer = dev->createFramebufferUnique(fb_info);
+
+    m_fb_access_mask = vk::AccessFlags();
+    m_fb_layout = vk::ImageLayout::eUndefined;
 
     return true;
 }

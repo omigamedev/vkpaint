@@ -1,0 +1,93 @@
+#include "pch.h"
+#include "CmdRenderStroke.h"
+
+bool CmdRenderStroke::create(const vk::UniqueDevice& m_dev, const vk::PhysicalDevice& m_pd, const vk::UniqueCommandPool& m_cmd_pool,
+    const vk::UniqueDescriptorPool& m_descr_pool, const vk::UniqueDescriptorSetLayout& m_descr_layout, 
+    const vk::UniqueRenderPass& m_renderpass, const vk::UniqueFramebuffer& m_framebuffer, const vk::UniquePipeline& m_pipeline, 
+    const vk::UniquePipelineLayout& m_pipeline_layout, const vk::UniqueSampler& m_sampler, 
+    const vk::Extent2D m_swapchain_extent, const vk::UniqueImage& m_fb_img, const vk::UniqueImageView& m_fb_view, 
+    const vk::UniqueImageView& m_brush_view, glm::vec3 clear_color)
+{
+    m_vert_ubo.create(m_pd, m_dev);
+    m_frag_ubo.create(m_pd, m_dev);
+
+    auto cmd_info = vk::CommandBufferAllocateInfo(*m_cmd_pool, vk::CommandBufferLevel::ePrimary, 1);
+    m_cmd = std::move(m_dev->allocateCommandBuffersUnique(cmd_info).front());
+
+    auto descr_info = vk::DescriptorSetAllocateInfo(*m_descr_pool, 1, &m_descr_layout.get());
+    m_descr.release();
+    m_descr = std::move(m_dev->allocateDescriptorSetsUnique(descr_info).front());
+
+    auto descr_vert_buffer_info = vk::DescriptorBufferInfo(*m_vert_ubo.m_buffer, 0, VK_WHOLE_SIZE);
+    auto descr_frag_buffer_info = vk::DescriptorBufferInfo(*m_frag_ubo.m_buffer, 0, VK_WHOLE_SIZE);
+    auto descr_image_info_fb = vk::DescriptorImageInfo(*m_sampler,
+        *m_fb_view, vk::ImageLayout::eGeneral);
+    auto descr_image_info_brush = vk::DescriptorImageInfo(*m_sampler,
+        *m_brush_view, vk::ImageLayout::eShaderReadOnlyOptimal);
+    std::array<vk::WriteDescriptorSet, 4> descr_write = {
+        // vert UBO - mvp
+        vk::WriteDescriptorSet(*m_descr, 0, 0, 1,
+            vk::DescriptorType::eUniformBuffer, nullptr, &descr_vert_buffer_info, nullptr),
+        // tex_bg
+        vk::WriteDescriptorSet(*m_descr, 1, 0, 1,
+            vk::DescriptorType::eCombinedImageSampler, &descr_image_info_fb, nullptr, nullptr),
+        // tex_brush
+        vk::WriteDescriptorSet(*m_descr, 2, 0, 1,
+            vk::DescriptorType::eCombinedImageSampler, &descr_image_info_brush, nullptr, nullptr),
+        // frag UBO - col
+        vk::WriteDescriptorSet(*m_descr, 3, 0, 1,
+            vk::DescriptorType::eUniformBuffer, nullptr, &descr_frag_buffer_info, nullptr),
+    };
+    m_dev->updateDescriptorSets(descr_write, nullptr);
+
+    vk::ClearValue clearColor(std::array<float, 4>{ clear_color.r, clear_color.g, clear_color.b, 1.f });
+    auto begin_info = vk::RenderPassBeginInfo(*m_renderpass, *m_framebuffer,
+        vk::Rect2D({ 0, 0 }, m_swapchain_extent), 1, &clearColor);
+
+    auto pipeline_vp = vk::Viewport(0, 0, m_swapchain_extent.width, m_swapchain_extent.height, 0, 1);
+    auto pipeline_vpscissor = vk::Rect2D({ 0, 0 }, m_swapchain_extent);
+
+    m_cmd->begin(vk::CommandBufferBeginInfo());
+    m_cmd->setViewport(0, pipeline_vp);
+    m_cmd->setScissor(0, pipeline_vpscissor);
+
+    vk::ImageMemoryBarrier imb;
+    imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.image = *m_fb_img;
+    imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    
+//     imb.srcAccessMask = {};// vk::AccessFlagBits::eShaderRead;
+//     imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+//     imb.oldLayout = vk::ImageLayout::eUndefined;
+//     imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+//     m_cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+//         {}, 0, nullptr, 0, nullptr, 1, &imb);
+
+    imb.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+    imb.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    imb.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    imb.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    m_cmd->pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        {}, 0, nullptr, 0, nullptr, 1, &imb);
+
+    m_cmd->beginRenderPass(begin_info, vk::SubpassContents::eInline);
+    m_cmd->bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
+    m_cmd->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+        *m_pipeline_layout, 0, *m_descr, nullptr);
+
+    if (!m_cleared)
+    {
+        m_cmd->clearAttachments(vk::ClearAttachment(vk::ImageAspectFlagBits::eColor, 0, clearColor),
+            vk::ClearRect(vk::Rect2D(vk::Offset2D(0, 0), m_swapchain_extent), 0, 1));
+        m_cleared = true;
+    }
+    else
+    {
+        m_cmd->draw(6, 1, 0, 0);
+    }
+
+    m_cmd->endRenderPass();
+    m_cmd->end();
+
+    return true;
+}

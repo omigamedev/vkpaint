@@ -17,10 +17,12 @@ public:
     vk::UniqueDeviceMemory m_fb_mem;
     vk::UniqueRenderPass m_renderpass;
     vk::UniqueFramebuffer m_framebuffer;
+    vk::AccessFlags m_fb_access_mask;
+    vk::ImageLayout m_fb_layout;
 
     glm::ivec2 m_size;
 
     bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height);
-    void to_texture(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q);
-    void to_render(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q);
+    void to_layout(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q,
+        vk::AccessFlags access_mask, vk::ImageLayout layout, vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage);
 };

@@ -5,7 +5,7 @@ bool CmdRenderToScreen::create(const vk::UniqueDevice& m_dev, const vk::Physical
     const vk::UniqueDescriptorPool& m_descr_pool, const vk::UniqueDescriptorSetLayout& m_descr_layout, 
     const vk::UniqueRenderPass& m_renderpass, const vk::UniqueFramebuffer& m_framebuffer, const vk::UniquePipeline& m_pipeline, 
     const vk::UniquePipelineLayout& m_pipeline_layout, const vk::UniqueSampler& m_sampler, 
-    const vk::Extent2D m_swapchain_extent, const vk::UniqueImageView& m_tex_view)
+    const vk::Extent2D m_swapchain_extent, const vk::UniqueImageView& m_tex_view, glm::vec3 clear_color)
 {
     m_ubo.create(m_pd, m_dev);
 
@@ -27,7 +27,7 @@ bool CmdRenderToScreen::create(const vk::UniqueDevice& m_dev, const vk::Physical
     };
     m_dev->updateDescriptorSets(descr_write, nullptr);
 
-    vk::ClearValue clearColor(std::array<float, 4>{ m_clear_color.r, m_clear_color.g, m_clear_color.b, 1.f });
+    vk::ClearValue clearColor(std::array<float, 4>{ clear_color.r, clear_color.g, clear_color.b, 1.f });
     auto begin_info = vk::RenderPassBeginInfo(*m_renderpass, *m_framebuffer,
         vk::Rect2D({ 0, 0 }, m_swapchain_extent), 1, &clearColor);
 
@@ -39,13 +39,11 @@ bool CmdRenderToScreen::create(const vk::UniqueDevice& m_dev, const vk::Physical
     m_cmd->setScissor(0, pipeline_vpscissor);
 
     m_cmd->beginRenderPass(begin_info, vk::SubpassContents::eInline);
-    if (draw)
-    {
-        m_cmd->bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-        m_cmd->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-            *m_pipeline_layout, 0, *m_descr, nullptr);
-        m_cmd->draw(6, 1, 0, 0);
-    }
+    m_cmd->bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
+    m_cmd->bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+        *m_pipeline_layout, 0, *m_descr, nullptr);
+    m_cmd->draw(6, 1, 0, 0);
+
     m_cmd->endRenderPass();
     m_cmd->end();
 

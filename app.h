@@ -28,13 +28,13 @@ public:
 
     HWND m_wnd;
     std::string m_device_name;
+    uint32_t m_strokes_count = 0;
 
     bool init_vulkan();
     bool init_pipeline();
     std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> find_device();
     void resize();
     void create_swapchain();
-    void create_commands();
     void run_loop();
 
     virtual void on_init() = 0;

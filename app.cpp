@@ -53,12 +53,12 @@ bool App::init_vulkan()
     m_cmd_pool = m_dev->createCommandPoolUnique(cmd_pool_info);
 
     std::array<vk::DescriptorPoolSize, 2> descr_pool_size = {
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 100),
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 100),
+        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1000),
+        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1000),
     };
     auto descr_pool_info = vk::DescriptorPoolCreateInfo(
         vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        400, descr_pool_size.size(), descr_pool_size.data());
+        2000, descr_pool_size.size(), descr_pool_size.data());
     m_descr_pool = m_dev->createDescriptorPoolUnique(descr_pool_info);
 
     init_pipeline();
@@ -110,7 +110,7 @@ bool App::init_pipeline()
     auto pipeline_layout_info = vk::PipelineLayoutCreateInfo({}, 1, &m_descr_layout.get(), 0, nullptr);
     m_pipeline_layout = m_dev->createPipelineLayoutUnique(pipeline_layout_info);
 
-    auto pipeline_renderpass_fb = vk::AttachmentDescription({}, vk::Format::eR8G8B8A8Unorm,
+    auto pipeline_renderpass_fb = vk::AttachmentDescription({}, vk::Format::eB8G8R8A8Unorm,
         vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
         vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
         vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR);
@@ -176,8 +176,8 @@ void App::create_swapchain()
     auto surface_formats = m_pd.getSurfaceFormatsKHR(*m_surf);
     auto surface_caps = m_pd.getSurfaceCapabilitiesKHR(*m_surf);
     auto swap_info = vk::SwapchainCreateInfoKHR({}, *m_surf, surface_caps.minImageCount,
-        vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1,
-        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+        vk::Format::eB8G8R8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear, surface_caps.currentExtent, 1,
+        vk::ImageUsageFlagBits::eColorAttachment,
         vk::SharingMode::eExclusive, 0, nullptr,
         vk::SurfaceTransformFlagBitsKHR::eIdentity, vk::CompositeAlphaFlagBitsKHR::eOpaque,
         vk::PresentModeKHR::eFifo, true, nullptr);
@@ -194,7 +194,7 @@ void App::create_swapchain()
     for (size_t image_index = 0; image_index < m_swapchain_images.size(); image_index++)
     {
         auto view_info = vk::ImageViewCreateInfo({}, m_swapchain_images[image_index],
-            vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Unorm,
+            vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm,
             vk::ComponentMapping(cs::eR, cs::eG, cs::eB, cs::eA),
             vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
         m_swapchain_views[image_index] = m_dev->createImageViewUnique(view_info);
@@ -203,10 +203,6 @@ void App::create_swapchain()
             m_swapchain_extent.width, m_swapchain_extent.height, 1);
         m_framebuffers[image_index] = m_dev->createFramebufferUnique(fb_info);
     }
-}
-
-void App::create_commands()
-{
 }
 
 void App::run_loop()
@@ -225,7 +221,7 @@ void App::run_loop()
 
         if (swapchain_needs_recreation)
         {
-            resize();
+            //resize();
             swapchain_needs_recreation = false;
         }
 
@@ -242,9 +238,11 @@ void App::run_loop()
         if (timer_fps_sec >= 1.f)
         {
             timer_fps = timer_fps_dec;
-            std::string title = fmt::format("Vulkan {} - {} fps", m_device_name, frames);
+            std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec", 
+                m_device_name, frames, m_strokes_count);
             SetWindowTextA(m_wnd, title.c_str());
             frames = 0;
+            m_strokes_count = 0;
         }
     }
     m_dev->waitIdle();

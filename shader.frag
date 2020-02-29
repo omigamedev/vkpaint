@@ -14,6 +14,6 @@ void main()
     vec2 uvs_pix = gl_FragCoord.st / vec2(textureSize(tex_bg, 0));
     float brush_value = 1.0 - texture(tex_brush, ftex).r;
     vec3 bg = texture(tex_bg, uvs_pix).rgb;
-    vec3 rgb = mix(bg, frag_ubo.col, 0.25 * brush_value);
+    vec3 rgb = mix(bg, frag_ubo.col, 0.0001 * brush_value);
     frag = vec4(rgb, 1.0);
 }

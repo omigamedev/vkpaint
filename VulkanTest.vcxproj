@@ -168,6 +168,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="app.cpp" />
+    <ClCompile Include="CmdRenderStroke.cpp" />
     <ClCompile Include="CmdRenderToScreen.cpp" />
     <ClCompile Include="debug_message.cpp" />
     <ClCompile Include="fmt\src\format.cc">
@@ -200,6 +201,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="app.h" />
+    <ClInclude Include="CmdRenderStroke.h" />
     <ClInclude Include="CmdRenderToScreen.h" />
     <ClInclude Include="debug_message.h" />
     <ClInclude Include="pch.h" />

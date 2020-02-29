@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "texture.h"
 
-bool Texture::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, const vk::Queue& q, const vk::UniqueCommandPool& cmd_pool, const std::filesystem::path& path)
+bool Texture::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, const vk::Queue& q, 
+    const vk::UniqueCommandPool& cmd_pool, const std::filesystem::path& path)
 {
     glm::ivec2 pix_size;
     int pix_comp;
