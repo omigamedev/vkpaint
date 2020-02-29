@@ -21,6 +21,7 @@
 #include "glm/gtx/transform.hpp"
 
 #include "stb/stb_image.h"
+#include "stb/stb_image_write.h"
 #include "tiny_obj_loader.h"
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>

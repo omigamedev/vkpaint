@@ -16,11 +16,6 @@ int find_memory(const vk::PhysicalDevice& pd, const vk::MemoryRequirements& req,
 std::vector<uint8_t> read_file(const std::filesystem::path& path);
 vk::UniqueShaderModule load_shader(const vk::UniqueDevice& dev, const std::filesystem::path& path);
 
-extern bool swapchain_needs_recreation;
-extern glm::ivec2 cur_pos;
-extern glm::ivec2 wnd_size;
-HWND create_window(int width, int height);
-
 std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory> 
     create_depth(const vk::PhysicalDevice& pd, vk::Device const& dev, int width, int height);
 vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev);

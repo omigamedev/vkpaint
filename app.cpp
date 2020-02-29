@@ -35,7 +35,7 @@ bool App::init_vulkan()
     init_debug_message(m_instance);
 #endif
 
-    m_wnd = create_window(800, 600);
+    create_window();
 
     auto surf_info = vk::Win32SurfaceCreateInfoKHR({}, GetModuleHandle(0), m_wnd);
     m_surf = m_instance->createWin32SurfaceKHRUnique(surf_info);
@@ -205,6 +205,26 @@ void App::create_swapchain()
     }
 }
 
+void App::create_window()
+{
+    WNDCLASS wc{ 0 };
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.hInstance = GetModuleHandle(0);
+    wc.lpszClassName = L"MainVulkanWindow";
+    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    wc.lpfnWndProc = App::wnd_proc;
+    if (!RegisterClass(&wc))
+        exit(1);
+    RECT r = { 0, 0, 800, 600 };
+    wnd_size.x = r.right - r.left;
+    wnd_size.y = r.bottom - r.top;
+    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, false);
+    m_wnd = CreateWindow(wc.lpszClassName, L"Vulkan", WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU, 0, 0,
+        r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, this);
+}
+
 void App::run_loop()
 {
     MSG msg;
@@ -246,4 +266,32 @@ void App::run_loop()
         }
     }
     m_dev->waitIdle();
+}
+
+App* App::I;
+
+LRESULT CALLBACK App::wnd_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    RECT r;
+    switch (uMsg)
+    {
+    case WM_CLOSE:
+        exit(0);
+    case WM_KEYUP:
+        I->on_keyup(wParam);
+        break;
+    case WM_SIZE:
+        I->swapchain_needs_recreation = true;
+        GetClientRect(hWnd, &r);
+        I->wnd_size.x = r.right - r.left;
+        I->wnd_size.y = r.bottom - r.top;
+        break;
+    case WM_MOUSEMOVE:
+        I->cur_pos.x = GET_X_LPARAM(lParam);
+        I->cur_pos.y = GET_Y_LPARAM(lParam);
+        break;
+    default:
+        break;
+    }
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }

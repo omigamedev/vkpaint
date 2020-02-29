@@ -29,49 +29,6 @@ vk::UniqueShaderModule load_shader(const vk::UniqueDevice& dev, const std::files
         reinterpret_cast<uint32_t*>(code.data()) });
 }
 
-bool swapchain_needs_recreation = false;
-glm::ivec2 cur_pos;
-glm::ivec2 wnd_size;
-HWND create_window(int width, int height)
-{
-    WNDCLASSA wc{ 0 };
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.hInstance = GetModuleHandle(0);
-    wc.lpszClassName = "MainVulkanWindow";
-    wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-    wc.lpfnWndProc = [](HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        RECT r;
-        switch (uMsg)
-        {
-        case WM_CLOSE:
-            exit(0);
-        case WM_SIZE:
-            swapchain_needs_recreation = true;
-            GetClientRect(hWnd, &r);
-            wnd_size.x = r.right - r.left;
-            wnd_size.y = r.bottom - r.top;
-            break;
-        case WM_MOUSEMOVE:
-            cur_pos.x = GET_X_LPARAM(lParam);
-            cur_pos.y = GET_Y_LPARAM(lParam);
-            break;
-        default:
-            break;
-        }
-        return DefWindowProcA(hWnd, uMsg, wParam, lParam);
-    };
-    if (!RegisterClassA(&wc))
-        exit(1);
-    RECT r = { 0, 0, width, height };
-    wnd_size.x = r.right - r.left;
-    wnd_size.y = r.bottom - r.top;
-    AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, false);
-    return CreateWindowA(wc.lpszClassName, "Vulkan", WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_SYSMENU, 0, 0,
-        r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, NULL);
-}
-
 std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory>
 create_depth(const vk::PhysicalDevice& pd, vk::Device const& dev, int width, int height)
 {

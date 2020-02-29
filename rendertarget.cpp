@@ -145,7 +145,7 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     img_info.arrayLayers = 1;
     img_info.samples = vk::SampleCountFlagBits::e1;
     img_info.tiling = vk::ImageTiling::eOptimal;
-    img_info.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment;
+    img_info.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc;
     img_info.sharingMode = vk::SharingMode::eExclusive; // TODO: check this since it will likely be used in different command buffers
     img_info.initialLayout = vk::ImageLayout::eUndefined;
     m_fb_img = dev->createImageUnique(img_info);
