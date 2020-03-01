@@ -5,8 +5,12 @@
 #include <array>
 #include <vector>
 #include <chrono>
+#include <thread>
+#include <mutex>
 #include <fstream>
 #include <filesystem>
+#include <condition_variable>
+
 #include <windows.h>
 #include <windowsx.h>
 #include <fmt/format.h>

@@ -4,7 +4,7 @@
 int find_memory(const vk::PhysicalDevice& pd, const vk::MemoryRequirements& req, vk::MemoryPropertyFlags flags)
 {
     vk::PhysicalDeviceMemoryProperties mp = pd.getMemoryProperties();
-    for (size_t mem_i = 0; mem_i < mp.memoryTypeCount; mem_i++)
+    for (int mem_i = 0; mem_i < mp.memoryTypeCount; mem_i++)
         if ((1 << mem_i) & req.memoryTypeBits && (mp.memoryTypes[mem_i].propertyFlags & flags) == flags)
             return mem_i;
     throw std::runtime_error("find_memory failed");
