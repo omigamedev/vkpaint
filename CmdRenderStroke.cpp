@@ -48,6 +48,7 @@ bool CmdRenderStroke::create(const vk::UniqueDevice& m_dev, const vk::PhysicalDe
     auto pipeline_vpscissor = vk::Rect2D({ 0, 0 }, m_swapchain_extent);
 
     m_cmd->begin(vk::CommandBufferBeginInfo());
+    m_cmd->debugMarkerBeginEXT({ "Render Stroke" });
     m_cmd->setViewport(0, pipeline_vp);
     m_cmd->setScissor(0, pipeline_vpscissor);
 
@@ -56,12 +57,12 @@ bool CmdRenderStroke::create(const vk::UniqueDevice& m_dev, const vk::PhysicalDe
     imb.image = *m_fb_img;
     imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
     
-//     imb.srcAccessMask = {};// vk::AccessFlagBits::eShaderRead;
-//     imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-//     imb.oldLayout = vk::ImageLayout::eUndefined;
-//     imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-//     m_cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
-//         {}, 0, nullptr, 0, nullptr, 1, &imb);
+    imb.srcAccessMask = {};// vk::AccessFlagBits::eShaderRead;
+    imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    imb.oldLayout = vk::ImageLayout::eUndefined;
+    imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    m_cmd->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+        {}, 0, nullptr, 0, nullptr, 1, &imb);
 
     imb.srcAccessMask = vk::AccessFlagBits::eShaderRead;
     imb.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
@@ -77,15 +78,18 @@ bool CmdRenderStroke::create(const vk::UniqueDevice& m_dev, const vk::PhysicalDe
 
     if (!m_cleared)
     {
+        m_cmd->debugMarkerInsertEXT({ "Clear Framebuffer" });
         m_cmd->clearAttachments(vk::ClearAttachment(vk::ImageAspectFlagBits::eColor, 0, clearColor),
             vk::ClearRect(vk::Rect2D(vk::Offset2D(0, 0), m_swapchain_extent), 0, 1));
         m_cleared = true;
     }
     else
     {
+        m_cmd->debugMarkerInsertEXT({ "Draw Quad" });
         m_cmd->draw(6, 1, 0, 0);
     }
 
+    m_cmd->debugMarkerEndEXT();
     m_cmd->endRenderPass();
     m_cmd->end();
 

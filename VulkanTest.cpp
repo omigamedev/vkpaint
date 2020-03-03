@@ -4,6 +4,7 @@
 #include "rendertarget.h"
 #include "texture.h"
 #include "CmdRenderStroke.h"
+#include "debug_message.h"
 
 class DrawApp : public App
 {
@@ -103,11 +104,15 @@ public:
 
     virtual void on_init() override
     {
-        rt.create(m_pd, m_dev, 8192, 8192);
+        rt.create(m_pd, m_dev, 1024, 1024);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
         m_sampler = create_sampler(m_dev);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         clear_rt();
+
+        // setup debug marke ext
+        debug_name(rt.m_fb_img, "Render Target Color Image");
+        debug_name(rt.m_fb_view, "Render Target Color View");
 
         m_render_thread = std::thread(&DrawApp::render_thread, this);
     }

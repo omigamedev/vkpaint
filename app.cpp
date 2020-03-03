@@ -150,7 +150,10 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
                 float priority = 0.0f;
                 auto queue_info = vk::DeviceQueueCreateInfo({}, idx, 1u, &priority);
                 std::vector<const char*> inst_layers;
-                std::vector<const char*> inst_ext{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+                std::vector<const char*> inst_ext{ 
+                    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                    VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
+                };
                 vk::PhysicalDeviceFeatures dev_feat;
                 dev_feat.samplerAnisotropy = true;
                 auto dev_info = vk::DeviceCreateInfo({}, 1, &queue_info,

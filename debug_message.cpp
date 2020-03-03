@@ -1,5 +1,30 @@
 #include "pch.h"
 
+PFN_vkDebugMarkerSetObjectNameEXT pfnvkDebugMarkerSetObjectNameEXT;
+PFN_vkCmdDebugMarkerBeginEXT pfnvkCmdDebugMarkerBeginEXT;
+PFN_vkCmdDebugMarkerInsertEXT pfnvkCmdDebugMarkerInsertEXT;
+PFN_vkCmdDebugMarkerEndEXT pfnvkCmdDebugMarkerEndEXT;
+
+VKAPI_ATTR VkResult VKAPI_CALL vkDebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarkerObjectNameInfoEXT* pNameInfo)
+{
+    return pfnvkDebugMarkerSetObjectNameEXT(device, pNameInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerBeginEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo)
+{
+    pfnvkCmdDebugMarkerBeginEXT(commandBuffer, pMarkerInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerInsertEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo)
+{
+    pfnvkCmdDebugMarkerInsertEXT(commandBuffer, pMarkerInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerEndEXT(VkCommandBuffer commandBuffer)
+{
+    pfnvkCmdDebugMarkerEndEXT(commandBuffer);
+}
+
 PFN_vkCreateDebugUtilsMessengerEXT pfnVkCreateDebugUtilsMessengerEXT;
 PFN_vkDestroyDebugUtilsMessengerEXT pfnVkDestroyDebugUtilsMessengerEXT;
 
@@ -65,6 +90,10 @@ VkBool32 debugMessageFunc(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity
 
 void init_debug_message(const vk::UniqueInstance& inst)
 {
+    pfnvkDebugMarkerSetObjectNameEXT = reinterpret_cast<PFN_vkDebugMarkerSetObjectNameEXT>(inst->getProcAddr("vkDebugMarkerSetObjectNameEXT"));
+    pfnvkCmdDebugMarkerBeginEXT = reinterpret_cast<PFN_vkCmdDebugMarkerBeginEXT>(inst->getProcAddr("vkCmdDebugMarkerBeginEXT"));
+    pfnvkCmdDebugMarkerInsertEXT = reinterpret_cast<PFN_vkCmdDebugMarkerInsertEXT>(inst->getProcAddr("vkCmdDebugMarkerInsertEXT"));
+    pfnvkCmdDebugMarkerEndEXT = reinterpret_cast<PFN_vkCmdDebugMarkerEndEXT>(inst->getProcAddr("vkCmdDebugMarkerEndEXT"));
 
     pfnVkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(inst->getProcAddr("vkCreateDebugUtilsMessengerEXT"));
     if (!pfnVkCreateDebugUtilsMessengerEXT)
