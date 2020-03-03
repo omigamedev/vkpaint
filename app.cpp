@@ -20,6 +20,7 @@ bool App::init_vulkan()
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #ifdef _DEBUG
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 #endif
     };
     vk::InstanceCreateInfo create_info({}, &app_info,
@@ -152,7 +153,9 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
                 std::vector<const char*> inst_layers;
                 std::vector<const char*> inst_ext{ 
                     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#ifdef _DEBUG
                     VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
+#endif
                 };
                 vk::PhysicalDeviceFeatures dev_feat;
                 dev_feat.samplerAnisotropy = true;

@@ -44,7 +44,7 @@ public:
         }
     }
 
-    void render_thread()
+    void canvas_render_thread()
     {
         float theta = 0;
 
@@ -114,7 +114,7 @@ public:
         debug_name(rt.m_fb_img, "Render Target Color Image");
         debug_name(rt.m_fb_view, "Render Target Color View");
 
-        m_render_thread = std::thread(&DrawApp::render_thread, this);
+        m_render_thread = std::thread(&DrawApp::canvas_render_thread, this);
     }
 
     virtual void on_render_frame(float dt) override

@@ -1,28 +1,31 @@
 #include "pch.h"
 
-PFN_vkDebugMarkerSetObjectNameEXT pfnvkDebugMarkerSetObjectNameEXT;
-PFN_vkCmdDebugMarkerBeginEXT pfnvkCmdDebugMarkerBeginEXT;
-PFN_vkCmdDebugMarkerInsertEXT pfnvkCmdDebugMarkerInsertEXT;
-PFN_vkCmdDebugMarkerEndEXT pfnvkCmdDebugMarkerEndEXT;
+PFN_vkDebugMarkerSetObjectNameEXT pfnvkDebugMarkerSetObjectNameEXT = nullptr;
+PFN_vkCmdDebugMarkerBeginEXT pfnvkCmdDebugMarkerBeginEXT = nullptr;
+PFN_vkCmdDebugMarkerInsertEXT pfnvkCmdDebugMarkerInsertEXT = nullptr;
+PFN_vkCmdDebugMarkerEndEXT pfnvkCmdDebugMarkerEndEXT = nullptr;
 
 VKAPI_ATTR VkResult VKAPI_CALL vkDebugMarkerSetObjectNameEXT(VkDevice device, const VkDebugMarkerObjectNameInfoEXT* pNameInfo)
 {
-    return pfnvkDebugMarkerSetObjectNameEXT(device, pNameInfo);
+    return pfnvkDebugMarkerSetObjectNameEXT ? pfnvkDebugMarkerSetObjectNameEXT(device, pNameInfo) : VkResult::VK_SUCCESS;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerBeginEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo)
 {
-    pfnvkCmdDebugMarkerBeginEXT(commandBuffer, pMarkerInfo);
+    if (pfnvkCmdDebugMarkerBeginEXT)
+        pfnvkCmdDebugMarkerBeginEXT(commandBuffer, pMarkerInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerInsertEXT(VkCommandBuffer commandBuffer, const VkDebugMarkerMarkerInfoEXT* pMarkerInfo)
 {
-    pfnvkCmdDebugMarkerInsertEXT(commandBuffer, pMarkerInfo);
+    if (pfnvkCmdDebugMarkerInsertEXT)
+        pfnvkCmdDebugMarkerInsertEXT(commandBuffer, pMarkerInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkCmdDebugMarkerEndEXT(VkCommandBuffer commandBuffer)
 {
-    pfnvkCmdDebugMarkerEndEXT(commandBuffer);
+    if (pfnvkCmdDebugMarkerEndEXT)
+        pfnvkCmdDebugMarkerEndEXT(commandBuffer);
 }
 
 PFN_vkCreateDebugUtilsMessengerEXT pfnVkCreateDebugUtilsMessengerEXT;
