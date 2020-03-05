@@ -14,8 +14,17 @@ class DrawApp : public App
     vk::UniqueSampler m_sampler;
     std::vector<CmdRenderToScreen> m_cmd_screen;
 
-    std::thread m_render_thread;
+    struct StrokeSample
+    {
+        glm::vec2 cur;
+        StrokeSample(glm::vec2 pos) : cur(pos) {}
+    };
+    std::mutex m_stroke_mutex;
+    std::condition_variable m_stroke_cv;
+    std::vector<StrokeSample> m_stroke_samples;
 
+    std::thread m_canvas_render_thread;
+    std::thread m_main_render_thread;
 public:
 
     void clear_rt()
@@ -32,7 +41,9 @@ public:
         si.commandBufferCount = 1;
         si.pCommandBuffers = &m_cmd_stroke_clear.m_cmd.get();
         vk::UniqueFence submit_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
+        m_main_queue_mutex.lock();
         m_main_queue.submit(si, *submit_fence);
+        m_main_queue_mutex.unlock();
         m_dev->waitForFences(*submit_fence, true, UINT64_MAX);
     }
 
@@ -42,25 +53,57 @@ public:
         {
             save_image(rt.m_fb_img, rt.m_size, "out.hdr");
         }
+        else if (keycode == 'C')
+        {
+            clear_rt();
+        }
+    }
+
+    void main_render_thread()
+    {
+        auto timer_start = std::chrono::high_resolution_clock::now();
+        uint32_t frames = 0;
+        float timer_fps = 0;
+        while (m_running)
+        {
+            auto timer_stop = std::chrono::high_resolution_clock::now();
+            auto timer_diff = std::chrono::duration<float>(timer_stop - timer_start);
+            timer_start = timer_stop;
+            float dt = timer_diff.count();
+            if (render_frame(dt))
+                frames++;
+
+            timer_fps += dt;
+            float timer_fps_sec;
+            float timer_fps_dec = std::modf(timer_fps, &timer_fps_sec);
+            if (timer_fps_sec >= 1.f)
+            {
+                timer_fps = timer_fps_dec;
+                std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec",
+                    m_device_name, frames, m_strokes_count);
+                SetWindowTextA(m_wnd, title.c_str());
+                frames = 0;
+                m_strokes_count = 0;
+            }
+        }
     }
 
     void canvas_render_thread()
     {
-        float theta = 0;
-
         auto cmd_pool_info = vk::CommandPoolCreateInfo({}, m_family_idx);
         vk::UniqueCommandPool cmd_pool = m_dev->createCommandPoolUnique(cmd_pool_info);
 
+        const size_t n = 10000;
         std::array<vk::DescriptorPoolSize, 2> descr_pool_size = {
-            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1000),
-            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1000),
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, n),
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, n),
         };
         auto descr_pool_info = vk::DescriptorPoolCreateInfo(
             vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-            2000, descr_pool_size.size(), descr_pool_size.data());
+            n * 2, descr_pool_size.size(), descr_pool_size.data());
         vk::UniqueDescriptorPool descr_pool = m_dev->createDescriptorPoolUnique(descr_pool_info);
         
-        std::vector<CmdRenderStroke> m_cmd_strokes(100);
+        std::vector<CmdRenderStroke> m_cmd_strokes(n);
         std::vector<vk::CommandBuffer> cmd_strokes_cmd(m_cmd_strokes.size());
         for (int i = 0; i < m_cmd_strokes.size(); i++)
         {
@@ -69,28 +112,41 @@ public:
                 rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler, vk::Extent2D(rt.m_size.x, rt.m_size.y),
                 rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 0, 1, 0 });
             cmd_strokes_cmd[i] = *m_cmd_strokes[i].m_cmd;
+
+            m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 1);
+            m_cmd_strokes[i].m_frag_ubo.update(m_dev);
         }
+
+        std::cout << "canvas ready\n";
 
         while (m_running)
         {
-            for (int i = 0; i < m_cmd_strokes.size(); i++)
+            std::unique_lock lock(m_stroke_mutex);
+            m_stroke_cv.wait(lock, [&] {
+                if (m_running && m_stroke_samples.empty()) return false; // keep waiting 
+                else return true;
+            });
+
+            if (!m_running)
+                break;
+
+            auto samples = std::move(m_stroke_samples);
+            lock.unlock();
+
+            int samples_count = std::min(samples.size(), m_cmd_strokes.size());
+            for (int i = 0; i < samples_count; i++)
             {
-                theta += 0.01 / m_cmd_strokes.size();
-                float x = glm::sin(theta);
-                float y = glm::cos(theta);
+                float x = samples[i].cur.x;
+                float y = -samples[i].cur.y;
 
-                m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(glm::abs(y), 0, glm::abs(x));
-                m_cmd_strokes[i].m_frag_ubo.update(m_dev);
-
-                m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::scale(glm::vec3(0.75f))
-                    * glm::translate(glm::vec3(x, y, 0))
-                    * glm::scale(glm::vec3(0.25f));
+                m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::translate(glm::vec3(x, y, 0))
+                    * glm::scale(glm::vec3(0.02f));
                 m_cmd_strokes[i].m_vert_ubo.update(m_dev);
                 m_strokes_count++;
             }
 
             vk::SubmitInfo si;
-            si.commandBufferCount = cmd_strokes_cmd.size();
+            si.commandBufferCount = samples_count;
             si.pCommandBuffers = cmd_strokes_cmd.data();
             vk::UniqueFence strokes_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
             m_main_queue_mutex.lock();
@@ -104,7 +160,7 @@ public:
 
     virtual void on_init() override
     {
-        rt.create(m_pd, m_dev, 1024, 1024);
+        rt.create(m_pd, m_dev, 8192, 8192);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
         m_sampler = create_sampler(m_dev);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
@@ -114,11 +170,22 @@ public:
         debug_name(rt.m_fb_img, "Render Target Color Image");
         debug_name(rt.m_fb_view, "Render Target Color View");
 
-        m_render_thread = std::thread(&DrawApp::canvas_render_thread, this);
+        m_canvas_render_thread = std::thread(&DrawApp::canvas_render_thread, this);
+        m_main_render_thread = std::thread(&DrawApp::main_render_thread, this);
     }
 
-    virtual void on_render_frame(float dt) override
+    virtual bool render_frame(float dt)
     {
+        static float timer = 0;
+
+        timer += dt;
+        const float period = 1.f / 60.f;
+        if (timer < period)
+        {
+            std::this_thread::sleep_for(std::chrono::duration<float>(period - timer - period * 0.1f));
+            return false;
+        }
+
         auto swapchain_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         vk::ResultValue<uint32_t> swapchain_idx = m_dev->acquireNextImageKHR(*m_swapchain, UINT64_MAX, *swapchain_sem, nullptr);
         vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eTopOfPipe;
@@ -132,9 +199,19 @@ public:
         m_main_queue_mutex.unlock();
         m_dev->waitForFences(*fence, true, UINT64_MAX);
 
+        auto present_start = std::chrono::high_resolution_clock::now();
         m_main_queue_mutex.lock();
         m_main_queue.presentKHR(present_info);
         m_main_queue_mutex.unlock();
+
+        //auto timer_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - present_start);
+        //int64_t present_dt = timer_diff.count();
+        //if (present_dt > 0)
+        //    std::cout << fmt::format("present time: {}ms\n", present_dt);
+
+        timer = 0;
+        
+        return true;
     }
 
     virtual void on_resize() override
@@ -152,34 +229,47 @@ public:
     }
 
     glm::ivec2 m_cur_pos;
+    bool m_drag = false;
 
     virtual void on_mouse_move(glm::ivec2 pos) override
     {
-        int dist = glm::ceil(glm::distance(glm::vec2(m_cur_pos), glm::vec2(pos)));
-        if (dist > 0)
+        if (m_drag)
         {
-            for (int i = 0; i < dist; i++)
+            glm::vec2 sz = { m_swapchain_extent.width, m_swapchain_extent.height };
+            //m_stroke_samples.emplace_back((glm::vec2(pos) / sz) * 2.f - 1.f);
+            int dist = glm::ceil(glm::distance(glm::vec2(m_cur_pos), glm::vec2(pos))) * 10;
+            if (dist > 0)
             {
-
+                std::lock_guard lock(m_stroke_mutex);
+                for (int i = 0; i < dist; i++)
+                {
+                    glm::vec2 p = glm::lerp(glm::vec2(m_cur_pos), glm::vec2(pos), (float)i / dist);
+                    m_stroke_samples.emplace_back((p / sz) * 2.f - 1.f);
+                }
             }
+            m_cur_pos = pos;
+            m_stroke_cv.notify_one();
         }
-        m_cur_pos = pos;
     }
 
     virtual void on_mouse_down(glm::ivec2 pos) override
     {
-
+        m_cur_pos = pos;
+        m_drag = true;
     }
 
     virtual void on_mouse_up(glm::ivec2 pos) override
     {
-
+        m_drag = false;
     }
 
     virtual void on_terminate() override
     {
-        if (m_render_thread.joinable())
-            m_render_thread.join();
+        m_stroke_cv.notify_one();
+        if (m_canvas_render_thread.joinable())
+            m_canvas_render_thread.join();
+        if (m_main_render_thread.joinable())
+            m_main_render_thread.join();
     }
 };
 

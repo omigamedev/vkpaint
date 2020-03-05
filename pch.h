@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <deque>
 #include <fstream>
 #include <filesystem>
 #include <condition_variable>

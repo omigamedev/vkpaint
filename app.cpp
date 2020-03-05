@@ -63,6 +63,7 @@ bool App::init_vulkan()
     m_descr_pool = m_dev->createDescriptorPoolUnique(descr_pool_info);
 
     init_pipeline();
+    create_swapchain();
     on_init();
 
     on_resize();
@@ -173,7 +174,7 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
 
 void App::on_resize()
 {
-    create_swapchain();
+    //create_swapchain();
 }
 
 void App::create_swapchain()
@@ -313,7 +314,7 @@ void App::run_loop()
     float timer_fps = 0;
     while (true)
     {
-        if (PeekMessage(&msg, m_wnd, 0, 0, PM_REMOVE))
+        if (GetMessage(&msg, m_wnd, 0, 0) > 0)
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -322,25 +323,25 @@ void App::run_loop()
         if (!m_running)
             break;
 
-        auto timer_stop = std::chrono::high_resolution_clock::now();
-        auto timer_diff = std::chrono::duration<float>(timer_stop - timer_start);
-        timer_start = timer_stop;
-        float dt = timer_diff.count();
-        on_render_frame(dt);
-        
-        frames++;
-        timer_fps += dt;
-        float timer_fps_sec;
-        float timer_fps_dec = std::modf(timer_fps, &timer_fps_sec);
-        if (timer_fps_sec >= 1.f)
-        {
-            timer_fps = timer_fps_dec;
-            std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec", 
-                m_device_name, frames, m_strokes_count);
-            SetWindowTextA(m_wnd, title.c_str());
-            frames = 0;
-            m_strokes_count = 0;
-        }
+        //auto timer_stop = std::chrono::high_resolution_clock::now();
+        //auto timer_diff = std::chrono::duration<float>(timer_stop - timer_start);
+        //timer_start = timer_stop;
+        //float dt = timer_diff.count();
+        //on_render_frame(dt);
+        //
+        //frames++;
+        //timer_fps += dt;
+        //float timer_fps_sec;
+        //float timer_fps_dec = std::modf(timer_fps, &timer_fps_sec);
+        //if (timer_fps_sec >= 1.f)
+        //{
+        //    timer_fps = timer_fps_dec;
+        //    std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec", 
+        //        m_device_name, frames, m_strokes_count);
+        //    SetWindowTextA(m_wnd, title.c_str());
+        //    frames = 0;
+        //    m_strokes_count = 0;
+        //}
     }
     m_running = false;
     on_terminate();
@@ -367,9 +368,11 @@ LRESULT CALLBACK App::wnd_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
         }
         break;
     case WM_LBUTTONDOWN:
+        SetCapture(hWnd);
         I->on_mouse_down({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
         break;
     case WM_LBUTTONUP:
+        ReleaseCapture();
         I->on_mouse_up({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
         break;
     case WM_MOUSEMOVE:

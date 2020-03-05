@@ -50,7 +50,6 @@ public:
     virtual void on_resize();
     virtual void on_init() = 0;
     virtual void on_terminate() = 0;
-    virtual void on_render_frame(float dt) = 0;
     virtual void on_keyup(int keycode) = 0;
     virtual void on_mouse_move(glm::ivec2 pos) = 0;
     virtual void on_mouse_down(glm::ivec2 pos) = 0;

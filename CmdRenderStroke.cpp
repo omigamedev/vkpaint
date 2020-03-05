@@ -47,7 +47,11 @@ bool CmdRenderStroke::create(const vk::UniqueDevice& m_dev, const vk::PhysicalDe
     auto pipeline_vp = vk::Viewport(0, 0, m_swapchain_extent.width, m_swapchain_extent.height, 0, 1);
     auto pipeline_vpscissor = vk::Rect2D({ 0, 0 }, m_swapchain_extent);
 
-    m_cmd->begin(vk::CommandBufferBeginInfo());
+    vk::CommandBufferUsageFlags flags = !m_cleared ? 
+        vk::CommandBufferUsageFlagBits::eOneTimeSubmit : 
+        vk::CommandBufferUsageFlags();
+
+    m_cmd->begin(vk::CommandBufferBeginInfo(flags));
     m_cmd->debugMarkerBeginEXT({ "Render Stroke" });
     m_cmd->setViewport(0, pipeline_vp);
     m_cmd->setScissor(0, pipeline_vpscissor);
