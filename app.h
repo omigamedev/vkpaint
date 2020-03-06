@@ -28,6 +28,7 @@ public:
     std::vector<vk::Image> m_swapchain_images;
     std::vector<vk::UniqueImageView> m_swapchain_views;
     std::vector<vk::UniqueFramebuffer> m_framebuffers;
+    std::mutex m_swapchain_mutex;
 
     HWND m_wnd = NULL;
     std::string m_device_name;
@@ -47,11 +48,11 @@ public:
     static App* I;
     static LRESULT CALLBACK wnd_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-    virtual void on_resize();
+    virtual void on_resize() = 0;
     virtual void on_init() = 0;
     virtual void on_terminate() = 0;
     virtual void on_keyup(int keycode) = 0;
-    virtual void on_mouse_move(glm::ivec2 pos) = 0;
-    virtual void on_mouse_down(glm::ivec2 pos) = 0;
+    virtual void on_mouse_move(glm::ivec2 pos, float pressure) = 0;
+    virtual void on_mouse_down(glm::ivec2 pos, float pressure) = 0;
     virtual void on_mouse_up(glm::ivec2 pos) = 0;
 };

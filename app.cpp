@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "app.h"
 #include "debug_message.h"
+#include "wacom.h"
 
 bool App::init_vulkan()
 {
@@ -37,6 +38,7 @@ bool App::init_vulkan()
 #endif
 
     create_window();
+    WacomTablet::I.init(m_wnd);
 
     auto surf_info = vk::Win32SurfaceCreateInfoKHR({}, GetModuleHandle(0), m_wnd);
     m_surf = m_instance->createWin32SurfaceKHRUnique(surf_info);
@@ -172,11 +174,6 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
     return {};
 }
 
-void App::on_resize()
-{
-    //create_swapchain();
-}
-
 void App::create_swapchain()
 {
     auto surface_formats = m_pd.getSurfaceFormatsKHR(*m_surf);
@@ -184,6 +181,8 @@ void App::create_swapchain()
 
     if (surface_caps.currentExtent == m_swapchain_extent)
         return;
+
+    std::lock_guard lock(m_swapchain_mutex);
 
     m_swapchain_views.clear();
     m_framebuffers.clear();
@@ -369,14 +368,18 @@ LRESULT CALLBACK App::wnd_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
         break;
     case WM_LBUTTONDOWN:
         SetCapture(hWnd);
-        I->on_mouse_down({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+        I->on_mouse_down({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, WacomTablet::I.get_pressure());
         break;
     case WM_LBUTTONUP:
         ReleaseCapture();
         I->on_mouse_up({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+        WacomTablet::I.reset_pressure();
         break;
     case WM_MOUSEMOVE:
-        I->on_mouse_move({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+        I->on_mouse_move({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, WacomTablet::I.get_pressure());
+        break;
+    case WT_PACKET:
+        WacomTablet::I.handle_message(hWnd, uMsg, wParam, lParam);
         break;
     default:
         break;

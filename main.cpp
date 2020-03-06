@@ -17,7 +17,8 @@ class DrawApp : public App
     struct StrokeSample
     {
         glm::vec2 cur;
-        StrokeSample(glm::vec2 pos) : cur(pos) {}
+        float pressure;
+        StrokeSample(glm::vec2 pos, float pressure) : cur(pos), pressure(pressure) {}
     };
     std::mutex m_stroke_mutex;
     std::condition_variable m_stroke_cv;
@@ -32,7 +33,7 @@ public:
         CmdRenderStroke m_cmd_stroke_clear;
         m_cmd_stroke_clear.create(m_dev, m_pd, m_cmd_pool, m_descr_pool, rt.m_descr_layout, rt.m_renderpass,
             rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler, vk::Extent2D(rt.m_size.x, rt.m_size.y),
-            rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 0, 1, 0 });
+            rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 1, 1, 1 });
 
         rt.to_layout(m_dev, m_cmd_pool, m_main_queue, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eFragmentShader);
@@ -93,7 +94,7 @@ public:
         auto cmd_pool_info = vk::CommandPoolCreateInfo({}, m_family_idx);
         vk::UniqueCommandPool cmd_pool = m_dev->createCommandPoolUnique(cmd_pool_info);
 
-        const size_t n = 10000;
+        const size_t n = 1000;
         std::array<vk::DescriptorPoolSize, 2> descr_pool_size = {
             vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, n),
             vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, n),
@@ -112,9 +113,6 @@ public:
                 rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler, vk::Extent2D(rt.m_size.x, rt.m_size.y),
                 rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 0, 1, 0 });
             cmd_strokes_cmd[i] = *m_cmd_strokes[i].m_cmd;
-
-            m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 1);
-            m_cmd_strokes[i].m_frag_ubo.update(m_dev);
         }
 
         std::cout << "canvas ready\n";
@@ -139,8 +137,12 @@ public:
                 float x = samples[i].cur.x;
                 float y = -samples[i].cur.y;
 
+                m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 0);
+                m_cmd_strokes[i].m_frag_ubo.m_value.pressure = 1.f;// samples[i].pressure;
+                m_cmd_strokes[i].m_frag_ubo.update(m_dev);
+
                 m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::translate(glm::vec3(x, y, 0))
-                    * glm::scale(glm::vec3(0.02f));
+                    * glm::scale(glm::vec3(0.01f * samples[i].pressure));
                 m_cmd_strokes[i].m_vert_ubo.update(m_dev);
                 m_strokes_count++;
             }
@@ -160,7 +162,7 @@ public:
 
     virtual void on_init() override
     {
-        rt.create(m_pd, m_dev, 8192, 8192);
+        rt.create(m_pd, m_dev, 1024, 1024);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
         m_sampler = create_sampler(m_dev);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
@@ -182,9 +184,11 @@ public:
         const float period = 1.f / 60.f;
         if (timer < period)
         {
-            std::this_thread::sleep_for(std::chrono::duration<float>(period - timer - period * 0.1f));
+            std::this_thread::sleep_for(std::chrono::duration<float>(period - timer));
             return false;
         }
+
+        std::lock_guard lock(m_swapchain_mutex);
 
         auto swapchain_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         vk::ResultValue<uint32_t> swapchain_idx = m_dev->acquireNextImageKHR(*m_swapchain, UINT64_MAX, *swapchain_sem, nullptr);
@@ -194,14 +198,18 @@ public:
         auto fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
         auto present_info = vk::PresentInfoKHR(1, &render_finished_sem.get(), 1, &m_swapchain.get(), &swapchain_idx.value);
 
-        m_main_queue_mutex.lock();
-        m_main_queue.submit(submit_info, *fence);
-        m_main_queue_mutex.unlock();
-        m_dev->waitForFences(*fence, true, UINT64_MAX);
-
         auto present_start = std::chrono::high_resolution_clock::now();
         m_main_queue_mutex.lock();
-        m_main_queue.presentKHR(present_info);
+        m_main_queue.submit(submit_info, *fence);
+        m_dev->waitForFences(*fence, true, UINT64_MAX);
+        try
+        {
+            m_main_queue.presentKHR(present_info);
+        }
+        catch (const vk::SystemError& err)
+        {
+            std::cout << err.what() << "\n";
+        }
         m_main_queue_mutex.unlock();
 
         //auto timer_diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - present_start);
@@ -216,7 +224,8 @@ public:
 
     virtual void on_resize() override
     {
-        App::on_resize();
+        create_swapchain();
+        std::lock_guard lock(m_swapchain_mutex);
         m_cmd_screen.clear();
         m_cmd_screen.resize(m_swapchain_images.size());
         for (size_t i = 0; i < m_swapchain_images.size(); i++)
@@ -231,7 +240,7 @@ public:
     glm::ivec2 m_cur_pos;
     bool m_drag = false;
 
-    virtual void on_mouse_move(glm::ivec2 pos) override
+    virtual void on_mouse_move(glm::ivec2 pos, float pressure) override
     {
         if (m_drag)
         {
@@ -244,7 +253,7 @@ public:
                 for (int i = 0; i < dist; i++)
                 {
                     glm::vec2 p = glm::lerp(glm::vec2(m_cur_pos), glm::vec2(pos), (float)i / dist);
-                    m_stroke_samples.emplace_back((p / sz) * 2.f - 1.f);
+                    m_stroke_samples.emplace_back((p / sz) * 2.f - 1.f, pressure);
                 }
             }
             m_cur_pos = pos;
@@ -252,7 +261,7 @@ public:
         }
     }
 
-    virtual void on_mouse_down(glm::ivec2 pos) override
+    virtual void on_mouse_down(glm::ivec2 pos, float pressure) override
     {
         m_cur_pos = pos;
         m_drag = true;

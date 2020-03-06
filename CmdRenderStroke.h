@@ -9,6 +9,7 @@ public:
     };
     struct frag_ubo_t {
         glm::vec3 col;
+        float pressure;
     };
 
     vk::UniqueCommandBuffer m_cmd;
