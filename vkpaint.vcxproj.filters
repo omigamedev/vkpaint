@@ -27,9 +27,6 @@
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tiny_obj_loader.cc">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="utils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
