@@ -11,9 +11,9 @@ bool App::init_vulkan()
     std::vector<const char*> inst_layers{
 #ifdef _DEBUG
         "VK_LAYER_LUNARG_standard_validation",
-        "VK_LAYER_KHRONOS_validation",
+        //"VK_LAYER_KHRONOS_validation",
         //"VK_LAYER_LUNARG_api_dump",
-        "VK_LAYER_RENDERDOC_Capture",
+        //"VK_LAYER_RENDERDOC_Capture",
 #endif
     };
     std::vector<const char*> inst_ext{
@@ -76,29 +76,11 @@ bool App::init_vulkan()
 
 bool App::init_pipeline()
 {
-    uint32_t spec_samples_count = (uint32_t)m_samples;
-    vk::SpecializationMapEntry spec_samples;
-    spec_samples.constantID = 0;
-    spec_samples.offset = 0;
-    spec_samples.size = sizeof(uint32_t);
-    vk::SpecializationInfo spec_info;
-    spec_info.mapEntryCount = 1;
-    spec_info.pMapEntries = &spec_samples;
-    spec_info.dataSize = sizeof(spec_samples_count);
-    spec_info.pData = &spec_samples_count;
-    if (m_samples == vk::SampleCountFlagBits::e1)
-    {
-        m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
-        m_frag_module = load_shader(m_dev, "shader-fill.frag.spv");
-    }
-    else
-    {
-        m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
-        m_frag_module = load_shader(m_dev, "shader-fill.frag.ms.spv");
-    }
+    m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
+    m_frag_module = load_shader(m_dev, "shader-fill.frag.spv");
     vk::PipelineShaderStageCreateInfo pipeline_stages[] = {
         { {}, vk::ShaderStageFlagBits::eVertex, *m_vert_module, "main" },
-        { {}, vk::ShaderStageFlagBits::eFragment, *m_frag_module, "main", &spec_info }
+        { {}, vk::ShaderStageFlagBits::eFragment, *m_frag_module, "main" }
     };
     auto pipeline_vertex_input = vk::PipelineVertexInputStateCreateInfo();
     auto pipeline_input_assembly = vk::PipelineInputAssemblyStateCreateInfo({}, vk::PrimitiveTopology::eTriangleList, false);
@@ -255,9 +237,10 @@ void App::create_window()
         r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, this);
 }
 
-void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path)
+void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path, bool hdr)
 {
-    vk::DeviceSize pix_sz = sz.x * sz.y * 4 * sizeof(float);
+    std::cout << "saving to " << path << " ... ";
+    vk::DeviceSize pix_sz = sz.x * sz.y * 4 * (hdr ? sizeof(float) : sizeof(uint8_t));
 
     // staging buffer
     vk::BufferCreateInfo buf_info;
@@ -317,10 +300,19 @@ void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std:
     }
     m_dev->waitForFences(*submit_fence, true, UINT64_MAX);
 
-    float* ptr = reinterpret_cast<float*>(m_dev->mapMemory(*buf_mem, 0, pix_sz));
     stbi_flip_vertically_on_write(true);
-    stbi_write_hdr(path.string().c_str(), sz.x, sz.y, 4, ptr);
+    if (hdr)
+    {
+        float* ptr = reinterpret_cast<float*>(m_dev->mapMemory(*buf_mem, 0, pix_sz));
+        stbi_write_hdr(path.string().c_str(), sz.x, sz.y, 4, ptr);
+    }
+    else
+    {
+        uint8_t* ptr = reinterpret_cast<uint8_t*>(m_dev->mapMemory(*buf_mem, 0, pix_sz));
+        stbi_write_jpg(path.string().c_str(), sz.x, sz.y, 4, ptr, 100);
+    }
     m_dev->unmapMemory(*buf_mem);
+    std::cout << "done\n";
 }
 
 void App::run_loop()

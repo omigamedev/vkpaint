@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "utils.h"
+#include "debug_message.h"
 
 int find_memory(const vk::PhysicalDevice& pd, const vk::MemoryRequirements& req, vk::MemoryPropertyFlags flags)
 {
@@ -25,8 +26,10 @@ std::vector<glm::uint8_t> read_file(const std::filesystem::path& path)
 vk::UniqueShaderModule load_shader(const vk::UniqueDevice& dev, const std::filesystem::path& path)
 {
     auto code = read_file(path);
-    return dev->createShaderModuleUnique({ {}, code.size(),
+    auto m = dev->createShaderModuleUnique({ {}, code.size(),
         reinterpret_cast<uint32_t*>(code.data()) });
+    debug_name(m, path.string().c_str());
+    return m;
 }
 
 std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory>

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "rendertarget.h"
 #include "utils.h"
+#include "debug_message.h"
 
 /*
 Canvas: where we are going to draw stuff
@@ -61,11 +62,13 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
     descr_info.bindingCount = pipeline_layout_bind.size();
     descr_info.pBindings = pipeline_layout_bind.data();
     m_descr_layout = dev->createDescriptorSetLayoutUnique(descr_info);
+    debug_name(m_descr_layout, "RenderTarget::m_descr_layout");
 
     vk::PipelineLayoutCreateInfo layout_info;
     layout_info.setLayoutCount = 1;
     layout_info.pSetLayouts = &m_descr_layout.get();
     m_layout = dev->createPipelineLayoutUnique(layout_info);
+    debug_name(m_layout, "RenderTarget::m_layout");
 
     vk::PipelineVertexInputStateCreateInfo vertex_input;
     vk::PipelineInputAssemblyStateCreateInfo input_assembly;
@@ -119,6 +122,8 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
     info.subpass = 0;
 
     m_pipeline = dev->createGraphicsPipelineUnique(nullptr, info);
+    debug_name(m_pipeline, "RenderTarget::m_pipeline");
+
 
     return true;
 }
@@ -128,6 +133,7 @@ void RenderTarget::to_layout(const vk::UniqueDevice& dev, const vk::UniqueComman
 {
     vk::UniqueCommandBuffer cmd = std::move(dev->allocateCommandBuffersUnique(
         { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
+    debug_name(cmd, "RenderTarget::to_layout::cmd");
     cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
     {
         vk::ImageMemoryBarrier imb;
@@ -168,10 +174,42 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     img_info.sharingMode = vk::SharingMode::eExclusive; // TODO: check this since it will likely be used in different command buffers
     img_info.initialLayout = vk::ImageLayout::eUndefined;
     m_fb_img = dev->createImageUnique(img_info);
+    debug_name(m_fb_img, "RenderTarget::m_fb_img");
+
+    vk::ImageCreateInfo resolved_info;
+    resolved_info.imageType = vk::ImageType::e2D;
+    resolved_info.format = vk::Format::eR8G8B8A8Unorm;
+    resolved_info.extent = vk::Extent3D(m_size.x, m_size.y, 1);
+    resolved_info.mipLevels = 1;
+    resolved_info.arrayLayers = 1;
+    resolved_info.samples = vk::SampleCountFlagBits::e1;
+    resolved_info.tiling = vk::ImageTiling::eOptimal;
+    resolved_info.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
+    resolved_info.sharingMode = vk::SharingMode::eExclusive;
+    resolved_info.initialLayout = vk::ImageLayout::eUndefined;
+    m_resolved_img = dev->createImageUnique(resolved_info);
+    debug_name(m_resolved_img, "RenderTarget::m_resolved_img");
     vk::MemoryRequirements img_req = dev->getImageMemoryRequirements(*m_fb_img);
     uint32_t img_mem_idx = find_memory(pd, img_req, vk::MemoryPropertyFlagBits::eDeviceLocal);
-    m_fb_mem = dev->allocateMemoryUnique({ img_req.size, img_mem_idx });
-    dev->bindImageMemory(*m_fb_img, *m_fb_mem, 0);
+    vk::MemoryRequirements resolved_req = dev->getImageMemoryRequirements(*m_resolved_img);
+    uint32_t resolved_mem_idx = find_memory(pd, resolved_req, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    if (img_mem_idx == resolved_mem_idx)
+    {
+        m_fb_mem = dev->allocateMemoryUnique({ img_req.size + resolved_req.size, img_mem_idx });
+        debug_name(m_fb_mem, "RenderTarget::m_fb_mem");
+        m_resolved_mem.reset();
+        dev->bindImageMemory(*m_fb_img, *m_fb_mem, 0);
+        dev->bindImageMemory(*m_resolved_img, *m_fb_mem, img_req.size);
+    }
+    else
+    {
+        m_fb_mem = dev->allocateMemoryUnique({ img_req.size, img_mem_idx });
+        debug_name(m_fb_mem, "RenderTarget::m_fb_mem");
+        dev->bindImageMemory(*m_fb_img, *m_fb_mem, 0);
+        m_resolved_mem = dev->allocateMemoryUnique({ resolved_req.size, resolved_mem_idx });
+        debug_name(m_resolved_mem, "RenderTarget::m_resolved_mem");
+        dev->bindImageMemory(*m_resolved_img, *m_resolved_mem, 0);
+    }
 
     // image view
     vk::ImageViewCreateInfo view_info;
@@ -181,6 +219,15 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     view_info.components = { cs::eR, cs::eG, cs::eB, cs::eA };
     view_info.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
     m_fb_view = dev->createImageViewUnique(view_info);
+    debug_name(m_fb_view, "RenderTarget::m_fb_view");
+    vk::ImageViewCreateInfo resolved_view_info;
+    resolved_view_info.image = *m_resolved_img;
+    resolved_view_info.viewType = vk::ImageViewType::e2D;
+    resolved_view_info.format = resolved_info.format;
+    resolved_view_info.components = { cs::eR, cs::eG, cs::eB, cs::eA };
+    resolved_view_info.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    m_resolved_view = dev->createImageViewUnique(resolved_view_info);
+    debug_name(m_resolved_view, "RenderTarget::m_resolved_view");
 
     // renderpass
     vk::AttachmentDescription renderpass_descr;
@@ -205,6 +252,7 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     renderpass_info.subpassCount = 1;
     renderpass_info.pSubpasses = &subpass_descr;
     m_renderpass = dev->createRenderPassUnique(renderpass_info);
+    debug_name(m_renderpass, "RenderTarget::m_renderpass");
 
     vk::FramebufferCreateInfo fb_info;
     fb_info.renderPass = *m_renderpass;
@@ -214,9 +262,78 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     fb_info.height = m_size.y;
     fb_info.layers = 1;
     m_framebuffer = dev->createFramebufferUnique(fb_info);
+    debug_name(m_framebuffer, "RenderTarget::m_framebuffer");
 
     m_fb_access_mask = vk::AccessFlags();
     m_fb_layout = vk::ImageLayout::eUndefined;
+
+    return true;
+}
+
+bool RenderTarget::create_resolver(const vk::UniqueDevice& m_dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& cmd_queue)
+{
+    auto cmd_resolve_info = vk::CommandBufferAllocateInfo(*cmd_pool, vk::CommandBufferLevel::ePrimary, 1);
+    cmd_resolve = std::move(m_dev->allocateCommandBuffersUnique(cmd_resolve_info).front());
+    debug_name(cmd_resolve, "RenderTarget::cmd_resolve");
+
+    cmd_resolve->begin(vk::CommandBufferBeginInfo());
+
+    vk::ImageMemoryBarrier imb;
+    imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.image = *m_resolved_img;
+    imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    imb.srcAccessMask = {};// vk::AccessFlagBits::eShaderRead;
+    imb.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+    imb.oldLayout = vk::ImageLayout::eUndefined;
+    imb.newLayout = vk::ImageLayout::eTransferDstOptimal;
+    cmd_resolve->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        {}, 0, nullptr, 0, nullptr, 1, &imb);
+
+    vk::ImageResolve resolve;
+    resolve.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    resolve.srcOffset = vk::Offset3D();
+    resolve.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    resolve.dstOffset = vk::Offset3D();
+    resolve.extent = vk::Extent3D(m_size.x, m_size.y, 1);
+    cmd_resolve->resolveImage(*m_fb_img, vk::ImageLayout::eGeneral,
+        *m_resolved_img, vk::ImageLayout::eTransferDstOptimal, resolve);
+
+    imb.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    imb.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    cmd_resolve->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+        {}, 0, nullptr, 0, nullptr, 1, &imb);
+
+    cmd_resolve->end();
+
+    // transition layout
+
+    vk::UniqueCommandBuffer cmd = std::move(m_dev->allocateCommandBuffersUnique(
+        { *cmd_pool, vk::CommandBufferLevel::ePrimary, 1 }).front());
+    debug_name(cmd, "RenderTarget::create_resolver::cmd");
+
+    cmd->begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+    {
+        vk::ImageMemoryBarrier imb;
+        imb.srcAccessMask = {};
+        imb.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        imb.oldLayout = vk::ImageLayout::eUndefined;
+        imb.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        imb.srcQueueFamilyIndex = imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imb.image = *m_resolved_img;
+        imb.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eFragmentShader,
+            {}, 0, nullptr, 0, nullptr, 1, &imb);
+    }
+    cmd->end();
+
+    vk::SubmitInfo si;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd.get();
+    vk::UniqueFence submit_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
+    cmd_queue.submit(si, *submit_fence);
+    m_dev->waitForFences(*submit_fence, true, UINT64_MAX);
 
     return true;
 }

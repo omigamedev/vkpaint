@@ -55,7 +55,10 @@ public:
     {
         if (keycode == VK_SPACE)
         {
-            save_image(rt.m_fb_img, rt.m_size, "out.hdr");
+            if ((int)m_samples > 1)
+                save_image(rt.m_resolved_img, rt.m_size, "out.jpg", false);
+            else
+                save_image(rt.m_fb_img, rt.m_size, "out.hdr", true);
         }
         else if (keycode == 'C')
         {
@@ -64,6 +67,7 @@ public:
         else if (keycode == 'R')
         {
             m_zoom = 1.f;
+            m_pan = { 0, 0 };
         }
     }
 
@@ -121,14 +125,12 @@ public:
             m_cmd_strokes[i].create(m_dev, m_pd, cmd_pool, descr_pool, rt.m_descr_layout, rt.m_renderpass,
                 rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler_linear, vk::Extent2D(rt.m_size.x, rt.m_size.y),
                 rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 0, 1, 0 });
-            cmd_strokes_cmd[i] = *m_cmd_strokes[i].m_cmd;
         }
 
         std::cout << "canvas ready\n";
 
         while (m_running)
         {
-            int samples_count = std::min(m_stroke_samples.size(), m_cmd_strokes.size());
             std::vector<StrokeSample> samples;
             {
                 std::unique_lock lock(m_stroke_mutex);
@@ -136,36 +138,61 @@ public:
                     if (m_running && m_stroke_samples.empty()) return false; // keep waiting 
                     else return true;
                 });
-                std::move(m_stroke_samples.begin(), m_stroke_samples.begin() + samples_count, std::back_inserter(samples));
-                m_stroke_samples.erase(m_stroke_samples.begin(), m_stroke_samples.begin() + samples_count);
+                samples = std::move(m_stroke_samples);
             }
 
             if (!m_running)
                 break;
 
-            for (int i = 0; i < samples_count; i++)
+            int buf_size = m_cmd_strokes.size() - 1;
+            int n = std::ceilf((float)samples.size() / buf_size);
+            for (int blk = 0; blk < n; blk++)
             {
-                float x = samples[i].cur.x;
-                float y = -samples[i].cur.y;
+                int i = 0;
+                int offset = blk * m_cmd_strokes.size();
+                int samples_count = std::min<int>(buf_size, samples.size() - offset);
+                for (; i < samples_count; i++)
+                {
+                    float x = samples[offset + i].cur.x;
+                    float y = -samples[offset + i].cur.y;
 
-                m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 0);
-                m_cmd_strokes[i].m_frag_ubo.m_value.pressure = 1.f;
-                m_cmd_strokes[i].m_frag_ubo.update(m_dev);
+                    m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 0);
+                    m_cmd_strokes[i].m_frag_ubo.m_value.pressure = 1.f;
+                    m_cmd_strokes[i].m_frag_ubo.update(m_dev);
 
-                m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::translate(glm::vec3(x, y, 0))
-                    * glm::scale(glm::vec3(0.01f * samples[i].pressure));
-                m_cmd_strokes[i].m_vert_ubo.update(m_dev);
-                m_strokes_count++;
+                    m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::translate(glm::vec3(x, y, 0))
+                        * glm::scale(glm::vec3(0.01f * samples[offset + i].pressure));
+                    m_cmd_strokes[i].m_vert_ubo.update(m_dev);
+                    m_strokes_count++;
+
+                    cmd_strokes_cmd[i] = *m_cmd_strokes[i].m_cmd;
+                }
+                offset += samples_count;
+
+                vk::UniqueFence strokes_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
+                if (m_samples == vk::SampleCountFlagBits::e1 || (blk < n - 1))
+                {
+                    vk::SubmitInfo si;
+                    si.commandBufferCount = samples_count;
+                    si.pCommandBuffers = cmd_strokes_cmd.data();
+                    m_main_queue_mutex.lock();
+                    m_main_queue.submit(si, *strokes_fence);
+                    m_main_queue_mutex.unlock();
+                    m_dev->waitForFences(*strokes_fence, true, UINT64_MAX);
+                }
+                else
+                {
+                    cmd_strokes_cmd[i] = *rt.cmd_resolve;
+
+                    vk::SubmitInfo si;
+                    si.commandBufferCount = samples_count + 1;
+                    si.pCommandBuffers = cmd_strokes_cmd.data();
+                    m_main_queue_mutex.lock();
+                    m_main_queue.submit(si, *strokes_fence);
+                    m_main_queue_mutex.unlock();
+                }
+                m_dev->waitForFences(*strokes_fence, true, UINT64_MAX);
             }
-
-            vk::SubmitInfo si;
-            si.commandBufferCount = samples_count;
-            si.pCommandBuffers = cmd_strokes_cmd.data();
-            vk::UniqueFence strokes_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
-            m_main_queue_mutex.lock();
-            m_main_queue.submit(si, *strokes_fence);
-            m_main_queue_mutex.unlock();
-            m_dev->waitForFences(*strokes_fence, true, UINT64_MAX);
 
             //std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
@@ -174,15 +201,13 @@ public:
     virtual void on_init() override
     {
         rt.create(m_pd, m_dev, 4096, 4096, m_samples);
+        if ((int)m_samples > 1)
+            rt.create_resolver(m_dev, m_cmd_pool, m_main_queue);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
         m_sampler_linear = create_sampler(m_dev, vk::Filter::eLinear);
         m_sampler_nearest = create_sampler(m_dev, vk::Filter::eNearest);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         clear_rt();
-
-        // setup debug marke ext
-        debug_name(rt.m_fb_img, "Render Target Color Image");
-        debug_name(rt.m_fb_view, "Render Target Color View");
 
         m_canvas_render_thread = std::thread(&DrawApp::canvas_render_thread, this);
         m_main_render_thread = std::thread(&DrawApp::main_render_thread, this);
@@ -251,7 +276,8 @@ public:
         for (size_t i = 0; i < m_swapchain_images.size(); i++)
         {
             m_cmd_screen[i].create(m_dev, m_pd, m_cmd_pool, m_descr_pool, m_descr_layout, m_renderpass, 
-                m_framebuffers[i], m_pipeline, m_pipeline_layout, (int)m_samples > 1 ? m_sampler_nearest : m_sampler_linear, m_swapchain_extent, rt.m_fb_view, glm::vec3(0.3f));
+                m_framebuffers[i], m_pipeline, m_pipeline_layout, m_sampler_linear, m_swapchain_extent, 
+                (int)m_samples > 1 ? rt.m_resolved_view : rt.m_fb_view, glm::vec3(0.3f));
             m_cmd_screen[i].m_ubo.m_value.mvp = glm::identity<glm::mat4>();
             m_cmd_screen[i].m_ubo.update(m_dev);
         }
