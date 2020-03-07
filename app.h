@@ -35,6 +35,8 @@ public:
     uint32_t m_strokes_count = 0;
     bool m_running = true;
 
+    const vk::SampleCountFlagBits m_samples = vk::SampleCountFlagBits::e1;
+
     App() { I = this; }
 
     bool init_vulkan();
@@ -53,6 +55,7 @@ public:
     virtual void on_terminate() = 0;
     virtual void on_keyup(int keycode) = 0;
     virtual void on_mouse_move(glm::ivec2 pos, float pressure) = 0;
-    virtual void on_mouse_down(glm::ivec2 pos, float pressure) = 0;
-    virtual void on_mouse_up(glm::ivec2 pos) = 0;
+    virtual void on_mouse_down(int button, glm::ivec2 pos, float pressure) = 0;
+    virtual void on_mouse_up(int button, glm::ivec2 pos) = 0;
+    virtual void on_mouse_wheel(glm::ivec2 pos, float delta) = 0;
 };

@@ -18,7 +18,7 @@ vk::UniqueShaderModule load_shader(const vk::UniqueDevice& dev, const std::files
 
 std::tuple<vk::UniqueImage, vk::UniqueImageView, vk::UniqueDeviceMemory> 
     create_depth(const vk::PhysicalDevice& pd, vk::Device const& dev, int width, int height);
-vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev);
+vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev, vk::Filter filter);
 auto create_triangle(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev);
 
 template<typename T>

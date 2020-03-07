@@ -9,6 +9,7 @@
 #include <mutex>
 #include <deque>
 #include <fstream>
+#include <algorithm>
 #include <filesystem>
 #include <condition_variable>
 

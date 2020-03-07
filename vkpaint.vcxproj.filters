@@ -62,20 +62,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shader.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shader.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shader-fill.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shader-fill.frag">
-      <Filter>Shaders</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="debug_message.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -109,5 +95,19 @@
     <ClInclude Include="log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="shader.frag">
+      <Filter>Shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="shader.vert">
+      <Filter>Shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="shader-fill.frag">
+      <Filter>Shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="shader-fill.vert">
+      <Filter>Shaders</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

@@ -9,20 +9,23 @@ public:
     vk::UniquePipelineLayout m_layout;
     vk::UniquePipeline m_pipeline;
 
-    vk::UniqueShaderModule shader_vert;
-    vk::UniqueShaderModule shader_frag;
+    vk::UniqueShaderModule m_shader_vert;
+    vk::UniqueShaderModule m_shader_frag;
 
     vk::UniqueImage m_fb_img;
+    vk::UniqueImage m_resolved_img;
     vk::UniqueImageView m_fb_view;
+    vk::UniqueImageView m_resolved_view;
     vk::UniqueDeviceMemory m_fb_mem;
     vk::UniqueRenderPass m_renderpass;
     vk::UniqueFramebuffer m_framebuffer;
     vk::AccessFlags m_fb_access_mask;
     vk::ImageLayout m_fb_layout;
+    vk::SampleCountFlagBits m_samples;
 
     glm::ivec2 m_size;
 
-    bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height);
+    bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples);
     void to_layout(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q,
         vk::AccessFlags access_mask, vk::ImageLayout layout, vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage);
 };

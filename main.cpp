@@ -11,8 +11,11 @@ class DrawApp : public App
     RenderTarget rt;
     Texture m_tex;
     vk::UniqueSemaphore render_finished_sem;
-    vk::UniqueSampler m_sampler;
+    vk::UniqueSampler m_sampler_linear;
+    vk::UniqueSampler m_sampler_nearest;
     std::vector<CmdRenderToScreen> m_cmd_screen;
+    float m_zoom = 1.f;
+    glm::vec2 m_pan = { 0, 0 };
 
     struct StrokeSample
     {
@@ -32,7 +35,7 @@ public:
     {
         CmdRenderStroke m_cmd_stroke_clear;
         m_cmd_stroke_clear.create(m_dev, m_pd, m_cmd_pool, m_descr_pool, rt.m_descr_layout, rt.m_renderpass,
-            rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler, vk::Extent2D(rt.m_size.x, rt.m_size.y),
+            rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler_linear, vk::Extent2D(rt.m_size.x, rt.m_size.y),
             rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 1, 1, 1 });
 
         rt.to_layout(m_dev, m_cmd_pool, m_main_queue, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -58,6 +61,10 @@ public:
         {
             clear_rt();
         }
+        else if (keycode == 'R')
+        {
+            m_zoom = 1.f;
+        }
     }
 
     void main_render_thread()
@@ -80,8 +87,10 @@ public:
             if (timer_fps_sec >= 1.f)
             {
                 timer_fps = timer_fps_dec;
-                std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec",
-                    m_device_name, frames, m_strokes_count);
+                std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec - res {}x{}{}",
+                    m_device_name, frames, m_strokes_count,
+                    rt.m_size.x, rt.m_size.y,
+                    (int)m_samples > 1 ? fmt::format(" - MSAA {}x", (int)m_samples) : "");
                 SetWindowTextA(m_wnd, title.c_str());
                 frames = 0;
                 m_strokes_count = 0;
@@ -110,7 +119,7 @@ public:
         {
             m_cmd_strokes[i].m_cleared = true;
             m_cmd_strokes[i].create(m_dev, m_pd, cmd_pool, descr_pool, rt.m_descr_layout, rt.m_renderpass,
-                rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler, vk::Extent2D(rt.m_size.x, rt.m_size.y),
+                rt.m_framebuffer, rt.m_pipeline, rt.m_layout, m_sampler_linear, vk::Extent2D(rt.m_size.x, rt.m_size.y),
                 rt.m_fb_img, rt.m_fb_view, m_tex.m_view, { 0, 1, 0 });
             cmd_strokes_cmd[i] = *m_cmd_strokes[i].m_cmd;
         }
@@ -119,26 +128,28 @@ public:
 
         while (m_running)
         {
-            std::unique_lock lock(m_stroke_mutex);
-            m_stroke_cv.wait(lock, [&] {
-                if (m_running && m_stroke_samples.empty()) return false; // keep waiting 
-                else return true;
-            });
+            int samples_count = std::min(m_stroke_samples.size(), m_cmd_strokes.size());
+            std::vector<StrokeSample> samples;
+            {
+                std::unique_lock lock(m_stroke_mutex);
+                m_stroke_cv.wait(lock, [&] {
+                    if (m_running && m_stroke_samples.empty()) return false; // keep waiting 
+                    else return true;
+                });
+                std::move(m_stroke_samples.begin(), m_stroke_samples.begin() + samples_count, std::back_inserter(samples));
+                m_stroke_samples.erase(m_stroke_samples.begin(), m_stroke_samples.begin() + samples_count);
+            }
 
             if (!m_running)
                 break;
 
-            auto samples = std::move(m_stroke_samples);
-            lock.unlock();
-
-            int samples_count = std::min(samples.size(), m_cmd_strokes.size());
             for (int i = 0; i < samples_count; i++)
             {
                 float x = samples[i].cur.x;
                 float y = -samples[i].cur.y;
 
                 m_cmd_strokes[i].m_frag_ubo.m_value.col = glm::vec3(0, 0, 0);
-                m_cmd_strokes[i].m_frag_ubo.m_value.pressure = 1.f;// samples[i].pressure;
+                m_cmd_strokes[i].m_frag_ubo.m_value.pressure = 1.f;
                 m_cmd_strokes[i].m_frag_ubo.update(m_dev);
 
                 m_cmd_strokes[i].m_vert_ubo.m_value.mvp = glm::translate(glm::vec3(x, y, 0))
@@ -162,9 +173,10 @@ public:
 
     virtual void on_init() override
     {
-        rt.create(m_pd, m_dev, 1024, 1024);
+        rt.create(m_pd, m_dev, 4096, 4096, m_samples);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
-        m_sampler = create_sampler(m_dev);
+        m_sampler_linear = create_sampler(m_dev, vk::Filter::eLinear);
+        m_sampler_nearest = create_sampler(m_dev, vk::Filter::eNearest);
         render_finished_sem = m_dev->createSemaphoreUnique(vk::SemaphoreCreateInfo());
         clear_rt();
 
@@ -186,6 +198,14 @@ public:
         {
             std::this_thread::sleep_for(std::chrono::duration<float>(period - timer));
             return false;
+        }
+
+        for (size_t i = 0; i < m_swapchain_images.size(); i++)
+        {
+            float aspect = (float)m_swapchain_extent.width / (float)m_swapchain_extent.height;
+            m_cmd_screen[i].m_ubo.m_value.mvp = glm::ortho<float>(-aspect, aspect, -1, 1) * glm::translate(glm::vec3(m_pan, 0)) 
+                * glm::scale(glm::vec3(m_zoom));
+            m_cmd_screen[i].m_ubo.update(m_dev);
         }
 
         std::lock_guard lock(m_swapchain_mutex);
@@ -231,20 +251,25 @@ public:
         for (size_t i = 0; i < m_swapchain_images.size(); i++)
         {
             m_cmd_screen[i].create(m_dev, m_pd, m_cmd_pool, m_descr_pool, m_descr_layout, m_renderpass, 
-                m_framebuffers[i], m_pipeline, m_pipeline_layout, m_sampler, m_swapchain_extent, rt.m_fb_view);
+                m_framebuffers[i], m_pipeline, m_pipeline_layout, (int)m_samples > 1 ? m_sampler_nearest : m_sampler_linear, m_swapchain_extent, rt.m_fb_view, glm::vec3(0.3f));
             m_cmd_screen[i].m_ubo.m_value.mvp = glm::identity<glm::mat4>();
             m_cmd_screen[i].m_ubo.update(m_dev);
         }
     }
 
     glm::ivec2 m_cur_pos;
-    bool m_drag = false;
+    bool m_dragL = false;
+    bool m_dragR = false;
+    glm::mat4 m_mat_start;
+    glm::vec2 m_pan_start;
+    glm::vec2 m_pan_value;
 
     virtual void on_mouse_move(glm::ivec2 pos, float pressure) override
     {
-        if (m_drag)
+        glm::vec2 sz = { m_swapchain_extent.width, m_swapchain_extent.height };
+        auto m = glm::inverse(m_cmd_screen[0].m_ubo.m_value.mvp);
+        if (m_dragL)
         {
-            glm::vec2 sz = { m_swapchain_extent.width, m_swapchain_extent.height };
             //m_stroke_samples.emplace_back((glm::vec2(pos) / sz) * 2.f - 1.f);
             int dist = glm::ceil(glm::distance(glm::vec2(m_cur_pos), glm::vec2(pos))) * 10;
             if (dist > 0)
@@ -253,23 +278,48 @@ public:
                 for (int i = 0; i < dist; i++)
                 {
                     glm::vec2 p = glm::lerp(glm::vec2(m_cur_pos), glm::vec2(pos), (float)i / dist);
-                    m_stroke_samples.emplace_back((p / sz) * 2.f - 1.f, pressure);
+                    p = (p / sz) * 2.f - 1.f;
+                    p = m * glm::vec4(p, 0, 1);
+                    m_stroke_samples.emplace_back(p, pressure);
                 }
             }
-            m_cur_pos = pos;
             m_stroke_cv.notify_one();
+        }
+        if (m_dragR)
+        {
+            glm::vec2 pos_n = m_mat_start * glm::vec4((glm::vec2(pos) / sz) * 2.f - 1.f, 0.f, 1.f);
+            m_pan = m_pan_value + glm::vec2(pos_n - m_pan_start) * m_zoom;
+        }
+        m_cur_pos = pos;
+    }
+
+    virtual void on_mouse_down(int button, glm::ivec2 pos, float pressure) override
+    {
+        m_cur_pos = pos;
+        if (button == 0)
+        {
+            m_dragL = true;
+        }
+        else if (button == 1)
+        {
+            glm::vec2 sz = { m_swapchain_extent.width, m_swapchain_extent.height };
+            m_mat_start = glm::inverse(m_cmd_screen[0].m_ubo.m_value.mvp);
+            m_pan_start = m_mat_start * glm::vec4((glm::vec2(pos) / sz) * 2.f - 1.f, 0.f, 1.f);
+            m_pan_value = m_pan;
+            m_dragR = true;
         }
     }
 
-    virtual void on_mouse_down(glm::ivec2 pos, float pressure) override
+    virtual void on_mouse_up(int button, glm::ivec2 pos) override
     {
-        m_cur_pos = pos;
-        m_drag = true;
-    }
-
-    virtual void on_mouse_up(glm::ivec2 pos) override
-    {
-        m_drag = false;
+        if (button == 0)
+        {
+            m_dragL = false;
+        }
+        else if (button == 1)
+        {
+            m_dragR = false;
+        }
     }
 
     virtual void on_terminate() override
@@ -280,6 +330,12 @@ public:
         if (m_main_render_thread.joinable())
             m_main_render_thread.join();
     }
+
+    virtual void on_mouse_wheel(glm::ivec2 pos, float delta) override
+    {
+        m_zoom += m_zoom * 0.1f * delta;
+    }
+
 };
 
 int main()

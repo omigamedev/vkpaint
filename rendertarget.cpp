@@ -15,17 +15,36 @@ Canvas: where we are going to draw stuff
 --
 */
 
-bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height)
+bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples)
 {
     m_size = { width, height };
+    m_samples = samples;
 
     create_framebuffer(pd, dev);
 
-    vk::UniqueShaderModule shader_vert = load_shader(dev, "shader.vert.spv");
-    vk::UniqueShaderModule shader_frag = load_shader(dev, "shader.frag.spv");
+    uint32_t spec_samples_count = (uint32_t)samples;
+    vk::SpecializationMapEntry spec_samples;
+    spec_samples.constantID = 0;
+    spec_samples.offset = 0;
+    spec_samples.size = sizeof(uint32_t);
+    vk::SpecializationInfo spec_info;
+    spec_info.mapEntryCount = 1;
+    spec_info.pMapEntries = &spec_samples;
+    spec_info.dataSize = sizeof(spec_samples_count);
+    spec_info.pData = &spec_samples_count;
+    if (samples == vk::SampleCountFlagBits::e1)
+    {
+        m_shader_vert = load_shader(dev, "shader.vert.spv");
+        m_shader_frag = load_shader(dev, "shader.frag.spv");
+    }
+    else
+    {
+        m_shader_vert = load_shader(dev, "shader.vert.spv");
+        m_shader_frag = load_shader(dev, "shader.frag.ms.spv");
+    }
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages = {
-        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex, *shader_vert, "main"),
-        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment, *shader_frag, "main"),
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eVertex, *m_shader_vert, "main"),
+        vk::PipelineShaderStageCreateInfo({}, vk::ShaderStageFlagBits::eFragment, *m_shader_frag, "main", &spec_info),
     };
 
     std::array<vk::DescriptorSetLayoutBinding, 4> pipeline_layout_bind = {
@@ -70,9 +89,9 @@ bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& 
     rasterization.lineWidth = 1.f;
 
     vk::PipelineMultisampleStateCreateInfo multisample;
-    multisample.rasterizationSamples = vk::SampleCountFlagBits::e1;
-    multisample.sampleShadingEnable = false;
-    multisample.minSampleShading = 1.f;
+    multisample.rasterizationSamples = m_samples;
+    multisample.sampleShadingEnable = true;
+    multisample.minSampleShading = (m_samples == vk::SampleCountFlagBits::e1) ? 1.f : .25f;
 
     vk::PipelineColorBlendAttachmentState blend_color;
     blend_color.blendEnable = false;
@@ -143,7 +162,7 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     img_info.extent = vk::Extent3D(m_size.x, m_size.y, 1);
     img_info.mipLevels = 1;
     img_info.arrayLayers = 1;
-    img_info.samples = vk::SampleCountFlagBits::e1;
+    img_info.samples = m_samples;
     img_info.tiling = vk::ImageTiling::eOptimal;
     img_info.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc;
     img_info.sharingMode = vk::SharingMode::eExclusive; // TODO: check this since it will likely be used in different command buffers
@@ -166,7 +185,7 @@ bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::Un
     // renderpass
     vk::AttachmentDescription renderpass_descr;
     renderpass_descr.format = img_info.format;
-    renderpass_descr.samples = vk::SampleCountFlagBits::e1;
+    renderpass_descr.samples = m_samples;
     renderpass_descr.loadOp = vk::AttachmentLoadOp::eLoad;
     renderpass_descr.storeOp = vk::AttachmentStoreOp::eStore;
     renderpass_descr.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;

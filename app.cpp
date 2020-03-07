@@ -76,12 +76,29 @@ bool App::init_vulkan()
 
 bool App::init_pipeline()
 {
-    m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
-    m_frag_module = load_shader(m_dev, "shader-fill.frag.spv");
-
+    uint32_t spec_samples_count = (uint32_t)m_samples;
+    vk::SpecializationMapEntry spec_samples;
+    spec_samples.constantID = 0;
+    spec_samples.offset = 0;
+    spec_samples.size = sizeof(uint32_t);
+    vk::SpecializationInfo spec_info;
+    spec_info.mapEntryCount = 1;
+    spec_info.pMapEntries = &spec_samples;
+    spec_info.dataSize = sizeof(spec_samples_count);
+    spec_info.pData = &spec_samples_count;
+    if (m_samples == vk::SampleCountFlagBits::e1)
+    {
+        m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
+        m_frag_module = load_shader(m_dev, "shader-fill.frag.spv");
+    }
+    else
+    {
+        m_vert_module = load_shader(m_dev, "shader-fill.vert.spv");
+        m_frag_module = load_shader(m_dev, "shader-fill.frag.ms.spv");
+    }
     vk::PipelineShaderStageCreateInfo pipeline_stages[] = {
-        { {}, vk::ShaderStageFlagBits::eVertex, *m_vert_module, "main", nullptr },
-        { {}, vk::ShaderStageFlagBits::eFragment, *m_frag_module, "main", nullptr }
+        { {}, vk::ShaderStageFlagBits::eVertex, *m_vert_module, "main" },
+        { {}, vk::ShaderStageFlagBits::eFragment, *m_frag_module, "main", &spec_info }
     };
     auto pipeline_vertex_input = vk::PipelineVertexInputStateCreateInfo();
     auto pipeline_input_assembly = vk::PipelineInputAssemblyStateCreateInfo({}, vk::PrimitiveTopology::eTriangleList, false);
@@ -162,6 +179,7 @@ std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> App::find_device()
                 };
                 vk::PhysicalDeviceFeatures dev_feat;
                 dev_feat.samplerAnisotropy = true;
+                dev_feat.sampleRateShading = true;
                 auto dev_info = vk::DeviceCreateInfo({}, 1, &queue_info,
                     inst_layers.size(), inst_layers.data(), inst_ext.size(), inst_ext.data(), &dev_feat);
                 if (auto dev = pd.createDeviceUnique(dev_info))
@@ -321,26 +339,6 @@ void App::run_loop()
 
         if (!m_running)
             break;
-
-        //auto timer_stop = std::chrono::high_resolution_clock::now();
-        //auto timer_diff = std::chrono::duration<float>(timer_stop - timer_start);
-        //timer_start = timer_stop;
-        //float dt = timer_diff.count();
-        //on_render_frame(dt);
-        //
-        //frames++;
-        //timer_fps += dt;
-        //float timer_fps_sec;
-        //float timer_fps_dec = std::modf(timer_fps, &timer_fps_sec);
-        //if (timer_fps_sec >= 1.f)
-        //{
-        //    timer_fps = timer_fps_dec;
-        //    std::string title = fmt::format("Vulkan {} - {} fps - {} stroke/sec", 
-        //        m_device_name, frames, m_strokes_count);
-        //    SetWindowTextA(m_wnd, title.c_str());
-        //    frames = 0;
-        //    m_strokes_count = 0;
-        //}
     }
     m_running = false;
     on_terminate();
@@ -366,14 +364,26 @@ LRESULT CALLBACK App::wnd_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
             I->on_resize();
         }
         break;
+    case WM_MOUSEWHEEL:
+        I->on_mouse_wheel({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) },
+            (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA);
+        break;
     case WM_LBUTTONDOWN:
         SetCapture(hWnd);
-        I->on_mouse_down({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, WacomTablet::I.get_pressure());
+        I->on_mouse_down(0, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, WacomTablet::I.get_pressure());
         break;
     case WM_LBUTTONUP:
         ReleaseCapture();
-        I->on_mouse_up({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+        I->on_mouse_up(0, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
         WacomTablet::I.reset_pressure();
+        break;
+    case WM_RBUTTONDOWN:
+        SetCapture(hWnd);
+        I->on_mouse_down(1, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, 1.f);
+        break;
+    case WM_RBUTTONUP:
+        ReleaseCapture();
+        I->on_mouse_up(1, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
         break;
     case WM_MOUSEMOVE:
         I->on_mouse_move({ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, WacomTablet::I.get_pressure());

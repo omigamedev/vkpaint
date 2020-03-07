@@ -54,11 +54,11 @@ create_depth(const vk::PhysicalDevice& pd, vk::Device const& dev, int width, int
     return std::tuple(std::move(depth_image), std::move(depth_view), std::move(depth_mem));
 }
 
-vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev)
+vk::UniqueSampler create_sampler(const vk::UniqueDevice& dev, vk::Filter filter)
 {
     vk::SamplerCreateInfo info;
-    info.magFilter = vk::Filter::eLinear;
-    info.minFilter = vk::Filter::eLinear;
+    info.magFilter = filter;
+    info.minFilter = filter;
     info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     info.addressModeU = vk::SamplerAddressMode::eRepeat;
     info.addressModeV = vk::SamplerAddressMode::eRepeat;
