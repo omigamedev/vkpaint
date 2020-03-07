@@ -21,14 +21,16 @@ public:
     vk::UniqueFramebuffer m_framebuffer;
     vk::AccessFlags m_fb_access_mask;
     vk::ImageLayout m_fb_layout;
-    vk::SampleCountFlagBits m_samples;
 
     vk::UniqueCommandBuffer cmd_resolve;
 
     glm::ivec2 m_size;
+    vk::SampleCountFlagBits m_samples;
+    vk::Format m_format;
 
-    bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples);
+    bool create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples, vk::Format format);
     bool create_resolver(const vk::UniqueDevice& m_dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& cmd_queue);
     void to_layout(const vk::UniqueDevice& dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& q,
         vk::AccessFlags access_mask, vk::ImageLayout layout, vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage);
+    void resolve(const vk::UniqueDevice& m_dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& cmd_queue);
 };

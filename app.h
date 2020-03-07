@@ -35,7 +35,7 @@ public:
     uint32_t m_strokes_count = 0;
     bool m_running = true;
 
-    const vk::SampleCountFlagBits m_samples = vk::SampleCountFlagBits::e8;
+    const vk::SampleCountFlagBits m_samples = vk::SampleCountFlagBits::e1;
 
     App() { I = this; }
 
@@ -44,7 +44,7 @@ public:
     std::tuple<vk::PhysicalDevice, vk::UniqueDevice, uint32_t> find_device();
     void create_swapchain();
     void create_window();
-    void save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path, bool hdr);
+    void save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path, vk::Format format);
     void run_loop();
 
     static App* I;

@@ -16,10 +16,11 @@ Canvas: where we are going to draw stuff
 --
 */
 
-bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples)
+bool RenderTarget::create(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev, int width, int height, vk::SampleCountFlagBits samples, vk::Format format)
 {
     m_size = { width, height };
     m_samples = samples;
+    m_format = format;
 
     create_framebuffer(pd, dev);
 
@@ -159,12 +160,22 @@ void RenderTarget::to_layout(const vk::UniqueDevice& dev, const vk::UniqueComman
     dev->waitForFences(*submit_fence, true, UINT64_MAX);
 }
 
+void RenderTarget::resolve(const vk::UniqueDevice& m_dev, const vk::UniqueCommandPool& cmd_pool, const vk::Queue& cmd_queue)
+{
+    vk::SubmitInfo si;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd_resolve.get();
+    vk::UniqueFence submit_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
+    cmd_queue.submit(si, *submit_fence);
+    m_dev->waitForFences(*submit_fence, true, UINT64_MAX);
+}
+
 bool RenderTarget::create_framebuffer(const vk::PhysicalDevice& pd, const vk::UniqueDevice& dev)
 {
     // device image
     vk::ImageCreateInfo img_info;
     img_info.imageType = vk::ImageType::e2D;
-    img_info.format = vk::Format::eR32G32B32A32Sfloat;
+    img_info.format = m_format;
     img_info.extent = vk::Extent3D(m_size.x, m_size.y, 1);
     img_info.mipLevels = 1;
     img_info.arrayLayers = 1;

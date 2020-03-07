@@ -5,6 +5,7 @@
 #include "texture.h"
 #include "CmdRenderStroke.h"
 #include "debug_message.h"
+#include <shellscalingapi.h>
 
 class DrawApp : public App
 {
@@ -42,8 +43,17 @@ public:
             vk::PipelineStageFlagBits::eBottomOfPipe, vk::PipelineStageFlagBits::eFragmentShader);
 
         vk::SubmitInfo si;
-        si.commandBufferCount = 1;
-        si.pCommandBuffers = &m_cmd_stroke_clear.m_cmd.get();
+        std::array<vk::CommandBuffer, 2> commands = { *m_cmd_stroke_clear.m_cmd, *rt.cmd_resolve };
+        if ((int)m_samples > 1)
+        {
+            si.commandBufferCount = commands.size();
+            si.pCommandBuffers = commands.data();
+        }
+        else
+        {
+            si.commandBufferCount = 1;
+            si.pCommandBuffers = &m_cmd_stroke_clear.m_cmd.get();
+        }
         vk::UniqueFence submit_fence = m_dev->createFenceUnique(vk::FenceCreateInfo());
         m_main_queue_mutex.lock();
         m_main_queue.submit(si, *submit_fence);
@@ -56,9 +66,9 @@ public:
         if (keycode == VK_SPACE)
         {
             if ((int)m_samples > 1)
-                save_image(rt.m_resolved_img, rt.m_size, "out.jpg", false);
+                save_image(rt.m_resolved_img, rt.m_size, "out", vk::Format::eR8G8B8A8Unorm);
             else
-                save_image(rt.m_fb_img, rt.m_size, "out.hdr", true);
+                save_image(rt.m_fb_img, rt.m_size, "out", rt.m_format);
         }
         else if (keycode == 'C')
         {
@@ -109,12 +119,12 @@ public:
 
         const size_t n = 1000;
         std::array<vk::DescriptorPoolSize, 2> descr_pool_size = {
-            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, n),
-            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, n),
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, n * 2),
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, n * 2),
         };
         auto descr_pool_info = vk::DescriptorPoolCreateInfo(
             vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-            n * 2, descr_pool_size.size(), descr_pool_size.data());
+            n * 4, descr_pool_size.size(), descr_pool_size.data());
         vk::UniqueDescriptorPool descr_pool = m_dev->createDescriptorPoolUnique(descr_pool_info);
         
         std::vector<CmdRenderStroke> m_cmd_strokes(n);
@@ -149,7 +159,7 @@ public:
             for (int blk = 0; blk < n; blk++)
             {
                 int i = 0;
-                int offset = blk * m_cmd_strokes.size();
+                int offset = blk * buf_size;
                 int samples_count = std::min<int>(buf_size, samples.size() - offset);
                 for (; i < samples_count; i++)
                 {
@@ -200,7 +210,7 @@ public:
 
     virtual void on_init() override
     {
-        rt.create(m_pd, m_dev, 4096, 4096, m_samples);
+        rt.create(m_pd, m_dev, 2048, 2048, m_samples, vk::Format::eR8G8B8A8Unorm);
         if ((int)m_samples > 1)
             rt.create_resolver(m_dev, m_cmd_pool, m_main_queue);
         m_tex.create(m_pd, m_dev, m_main_queue, m_cmd_pool, "brush.png");
@@ -297,7 +307,7 @@ public:
         if (m_dragL)
         {
             //m_stroke_samples.emplace_back((glm::vec2(pos) / sz) * 2.f - 1.f);
-            int dist = glm::ceil(glm::distance(glm::vec2(m_cur_pos), glm::vec2(pos))) * 10;
+            int dist = glm::ceil(glm::distance(glm::vec2(m_cur_pos), glm::vec2(pos)));
             if (dist > 0)
             {
                 std::lock_guard lock(m_stroke_mutex);
@@ -364,8 +374,27 @@ public:
 
 };
 
+HRESULT(*GetDpiForMonitor_fn)(HMONITOR hmonitor, MONITOR_DPI_TYPE dpiType, UINT* dpiX, UINT* dpiY);
+HRESULT(*SetProcessDpiAwareness_fn)(PROCESS_DPI_AWARENESS value);
+void init_shcore_API()
+{
+    HMODULE dll = LoadLibrary(L"Shcore.dll");
+    if (!dll)
+    {
+        std::cout << "cannot load Shcore.dll\n";
+        return;
+    }
+    std::cout << "loaded Shcore.dll\n";
+    GetDpiForMonitor_fn = (decltype(GetDpiForMonitor_fn))GetProcAddress(dll, "GetDpiForMonitor");
+    SetProcessDpiAwareness_fn = (decltype(SetProcessDpiAwareness_fn))GetProcAddress(dll, "SetProcessDpiAwareness");
+}
+
 int main()
 {
+    init_shcore_API();
+    if (SetProcessDpiAwareness_fn)
+        SetProcessDpiAwareness_fn(PROCESS_PER_MONITOR_DPI_AWARE);
+
     auto app = std::make_unique<DrawApp>();
     app->init_vulkan();
     app->run_loop();

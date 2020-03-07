@@ -11,7 +11,7 @@ bool App::init_vulkan()
     std::vector<const char*> inst_layers{
 #ifdef _DEBUG
         "VK_LAYER_LUNARG_standard_validation",
-        //"VK_LAYER_KHRONOS_validation",
+        "VK_LAYER_KHRONOS_validation",
         //"VK_LAYER_LUNARG_api_dump",
         //"VK_LAYER_RENDERDOC_Capture",
 #endif
@@ -237,10 +237,22 @@ void App::create_window()
         r.right - r.left, r.bottom - r.top, NULL, NULL, wc.hInstance, this);
 }
 
-void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path, bool hdr)
+void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std::filesystem::path& path, vk::Format format)
 {
     std::cout << "saving to " << path << " ... ";
-    vk::DeviceSize pix_sz = sz.x * sz.y * 4 * (hdr ? sizeof(float) : sizeof(uint8_t));
+    int bpp = 1;
+    switch (format)
+    {
+    case vk::Format::eR8G8B8A8Unorm:
+        bpp = 1;
+        break;
+    case vk::Format::eR32G32B32A32Sfloat:
+        bpp = sizeof(float);
+        break;
+    default:
+        throw std::runtime_error("unsupported format " + vk::to_string(format));
+    }
+    vk::DeviceSize pix_sz = sz.x * sz.y * 4 * bpp;
 
     // staging buffer
     vk::BufferCreateInfo buf_info;
@@ -301,17 +313,18 @@ void App::save_image(const vk::UniqueImage& img, const glm::ivec2 sz, const std:
     m_dev->waitForFences(*submit_fence, true, UINT64_MAX);
 
     stbi_flip_vertically_on_write(true);
-    if (hdr)
+    if (format == vk::Format::eR32G32B32A32Sfloat)
     {
         float* ptr = reinterpret_cast<float*>(m_dev->mapMemory(*buf_mem, 0, pix_sz));
-        stbi_write_hdr(path.string().c_str(), sz.x, sz.y, 4, ptr);
+        stbi_write_hdr((path.string() + ".hdr").c_str(), sz.x, sz.y, 4, ptr);
+        m_dev->unmapMemory(*buf_mem);
     }
-    else
+    else if (format == vk::Format::eR8G8B8A8Unorm)
     {
         uint8_t* ptr = reinterpret_cast<uint8_t*>(m_dev->mapMemory(*buf_mem, 0, pix_sz));
-        stbi_write_jpg(path.string().c_str(), sz.x, sz.y, 4, ptr, 100);
+        stbi_write_jpg((path.string() + ".jpg").c_str(), sz.x, sz.y, 4, ptr, 100);
+        m_dev->unmapMemory(*buf_mem);
     }
-    m_dev->unmapMemory(*buf_mem);
     std::cout << "done\n";
 }
 
